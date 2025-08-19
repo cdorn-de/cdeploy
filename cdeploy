@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+
+###########################################################################################
+##
+##  cdeploy – Ein einfaches Installationsprogramm
+##
+##  Das Skript wurde als einfaches Hilfstool für Administratoren entwickelt, die häufig
+##  ihre persönlichen Skripte und Daten auf zu wartenden Rechnern installieren müssen.
+##
+##  Features:
+##  - einfach zu pflegende Verzeichnisstruktur für zu installierende Daten
+##  - globale (für alle Benutzer) oder lokale Installation
+##  - Aktionen 'install' und 'remove'
+##
+##  Copyright (c) 2025 Christian Dorn
+##  Alle Rechte vorbehalten.
+##
+## ========================================================================================
+##
+##  STRUKTUR
+##  - Skript-Einstellungen
+##  - Globale Variablen & Konstanten
+##  - main()-Methode
+##  - Dispatcher-Methoden
+##  - Hilfsmethoden
+##  - main()-Methode aufrufen
+##
+## ========================================================================================
+##
+##  RICHTLINIEN
+##  - FOO_BAR   : globale Variable
+##  - _FOO_BAR  : globale Konstante (readonly-Variable)
+##  - foo_bar   : lokale Variable
+##  - _foo_bar  : lokale Konstante (readonly-Variable)
+##  - fooBar    : Methode
+##
+###########################################################################################
+
+
+
+
+## ========================================================================================
+## SKRIPT-EINSTELLUNGEN
+## ========================================================================================
+
+## Einstellungen für 'micro' Codeeditor (Einstellungen werden als Kommentare geschrieben!)
+# shellcheck disable=SC2317     # Fehler: Befehl unerreichbar
+
+
+# Abbruchkriterien für das Skript
+#   -e          : Abbrechen wenn eine Anweisung einen Returncode ≠ 0 liefert.
+#   -u          : Abbrechen wenn auf eine nicht definierte Variable zugegriffen wird.
+#   -o pipefail : Eine Pipeline beim ersten Fehler abbrechen, nicht erst beim Letzten.
+set -euo pipefail
+
+
+# Feldseparator anpassen. Leerzeichen gelten anschließend nicht mehr als Trennzeichen
+# -> Vorteil beim Parsen von Pfaden mit Leerzeichen.
+IFS=$'\n\t'
+
+
+# Es soll verhindert werden, dass ein noch aktives 'sudo' eine globale (De-)Installation
+# ermöglicht. Aus diesem Grund werden alle aktiven 'sudo'-Sitzungen deaktiviert; das Skript
+# muss bei Bedarf um eine neue Autorisierung bitten.
+sudo -k
+
+
+
+
+## ========================================================================================
+## main()-Methode
+## ========================================================================================
+main() {
+    # Parameter parsen
+    parseParameters "$@"
+}
+
+
+parseParameters() {
+    # Wenn keine Parameter übergeben wurden, Syntax anzeigen und beenden
+    if [[ $# -lt 1 ]]; then
+        echo "USAGE: cdeploy <command> [options] <package>"
+        exit 0
+    fi
+}
+
+
+
+
+## ========================================================================================
+## Globale Variablen & Kontanten
+## ========================================================================================
+
+
+
+
+## ========================================================================================
+## Hilfsmethoden
+## ========================================================================================
+
+
+
+
+## ========================================================================================
+## Aufruf der main()-Methode
+## ========================================================================================
+main "$@"
