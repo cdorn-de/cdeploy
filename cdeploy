@@ -94,8 +94,7 @@ main() {
         remove)
             cdeployRemove ;;
         *)
-            echo "Unbekannte Aktion: $ACTION"
-            exit 1 ;;
+            showSyntaxAndExit ;;
     esac
 }
 
@@ -103,8 +102,7 @@ main() {
 parseParameters() {
     # Wenn keine Parameter übergeben wurden, Syntax anzeigen und beenden
     if [[ $# -lt 1 ]]; then
-        echo "USAGE: cdeploy <command> [options] <package>"
-        exit 1
+        showSyntaxAndExit
     fi
 
 
@@ -113,8 +111,7 @@ parseParameters() {
     case "$1" in
         install) ACTION="install" ;;
         remove)  ACTION="remove" ;;
-        *)       echo "USAGE: cdeploy <command> [options] <package>"
-                 exit 1 ;;
+        *)       showSyntaxAndExit "Unbekannte Aktion: $1" ;;
     esac
 
     shift  # ersten Parameter entfernen
@@ -122,8 +119,7 @@ parseParameters() {
 
     # Syntax anzeigen und abbrechen, wenn kein Parameter mehr vorhanden ist
     if [[ $# -lt 1 ]]; then
-        echo "USAGE: cdeploy <command> [options] <package>"
-        exit 1
+        showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
     fi
 
 
@@ -139,17 +135,14 @@ parseParameters() {
             # die haben wir eingangs bereits ermittelt
             install| \
             remove)
-                echo "USAGE: cdeploy <command> [options] <package>"
-                exit 1 ;;
+                showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
             # Optionen
             --global)
                 OPT_SCOPE="global" ;;
             --local)
                 OPT_SCOPE="local" ;;
             # Alle anderen: Syntax anzeigen und abbrechen
-            *)
-                echo "USAGE: cdeploy <command> [options] <package>"
-                exit 1 ;;
+            *)  showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
         esac
     done
 
@@ -161,8 +154,7 @@ parseParameters() {
     fi
 
     if [[ -z "$OPT_SCOPE" ]]; then
-        echo "USAGE: cdeploy <command> [options] <package>"
-        exit 1
+        showSyntaxAndExit "Es wurde kein Zielbereich angegeben"
     fi
 }
 
@@ -203,6 +195,22 @@ getScopeStr() {
     else
         echo "lokal"
     fi
+}
+
+
+## Anzeigen der gültigen Syntax und Abbrechen des Skripts
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+showSyntaxAndExit() {
+    # optionale Meldungen ausgeben
+    for msg in "$@"; do
+        echo -e "$msg"
+    done
+
+    # Gültige Syntax ausgeben
+    echo -e "Syntax: cdeploy install --global|--local <package>"
+    echo -e "        cdeploy remove --global|--local <package>"
+
+    exit 1
 }
 
 
