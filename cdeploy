@@ -89,12 +89,14 @@ main() {
 
     # Aktion ausführen
     case "$ACTION" in
+        help)
+            cdeployShowHelpAndExit ;;
         install)
             cdeployInstall ;;
         remove)
             cdeployRemove ;;
         *)
-            showSyntaxAndExit ;;
+            showSyntaxAndExit "Ungültige oder unvolständige Anweisung" ;;
     esac
 }
 
@@ -109,15 +111,27 @@ parseParameters() {
     # Aktion auslesen; diese muss immer als erster Parameter gesetzt werden;
     # Syntax anzeigen und abbrechen, wenn eine unbekannte Aktion gefunden wird
     case "$1" in
-        install) ACTION="install" ;;
-        remove)  ACTION="remove" ;;
-        *)       showSyntaxAndExit "Unbekannte Aktion: $1" ;;
+        help|-h|--help) ACTION="help" ;;
+        install)        ACTION="install" ;;
+        remove)         ACTION="remove" ;;
+        *)              showSyntaxAndExit "Unbekannte Aktion: $1" ;;
     esac
 
     shift  # ersten Parameter entfernen
 
 
-    # Syntax anzeigen und abbrechen, wenn kein Parameter mehr vorhanden ist
+    # Einige Aktionen benötigen keine weiteren Parameter. Bei diesen können wir hier
+    # abbrechen. Sollten bei diesen Aktionen noch weitere Parameter angegeben sein,
+    # wird eine Fehlermeldung ausgegeben.
+    if [[ "$ACTION" == "help" ]]; then
+        if [[ $# -gt 0 ]]; then
+            showSyntaxAndExit "Diese Aktion benötigt keine Parameter: $ACTION"
+        fi
+        return 0
+    fi
+
+    # Alle anderen Aktionen benötigen weitere Parameter. Eine Fehlermeldung ausgeben
+    # und abbrechen, Wenn keine Parameter mehr vorhanden sind.
     if [[ $# -lt 1 ]]; then
         showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
     fi
@@ -148,7 +162,7 @@ parseParameters() {
 
 
     # Auf Vollständigkeit prüfen
-    if [[ ! -e "$PACKAGE" ]]; then
+    if [[ ! -e "$PACKAGE" && -d "$PACKAGE" ]]; then
         echo "Das angegebene Installationspaket existiert nicht."
         exit 1
     fi
@@ -165,11 +179,15 @@ parseParameters() {
 ## Dispatcher-Methoden
 ## ========================================================================================
 
+
 ## Installiert ein Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
     local scope_str;  scope_str=$(getScopeStr)
     echo "$(toCapitalized "${scope_str}")e Installation von Paket $PACKAGE"
+
+    # Paket prüfen
+    checkPackageStructure "$PACKAGE"
 }
 
 
@@ -178,6 +196,16 @@ cdeployInstall() {
 cdeployRemove() {
     local scope_str;  scope_str=$(getScopeStr)
     echo "Entfernen der ${scope_str}en Installation von Paket $PACKAGE"
+
+    # Paket prüfen
+    checkPackageStructure "$PACKAGE"
+}
+
+
+## Hilfeseite (Manpage) anzeigen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdeployShowHelpAndExit() {
+    echo "Hier steht die Hilfeseite."
 }
 
 
@@ -186,6 +214,66 @@ cdeployRemove() {
 ## ========================================================================================
 ## Hilfsmethoden
 ## ========================================================================================
+
+
+## Relativen Pfad absolut ausgeben
+## ---------------------------------------------------------------------
+absPath() {
+    echo "$(cd "$(dirname -- "$1")" && pwd)/$(basename -- "$1")"
+}
+
+
+## Prüfen ob ein Verzeichnis die Mindestanforderungen für ein
+## Installationspaket erfüllt
+## ---------------------------------------------------------------------
+checkPackageStructure() {
+    local package="$1"
+
+
+    if [[ ! -e "$package" ]]; then
+        echo "Das Paket wurde nicht gefunden: $(absPath "$package")"
+        exit 1
+    elif [[ ! -d "$package" ]]; then
+        echo "Das ist kein Verzeichnis: $(absPath "$package")"
+        exit 1
+    fi
+
+    local src=""
+
+    # a) cdeploy.conf vorhanden?
+    src="$package/cdeploy.conf"
+    [[ -f "$src" ]] && return
+
+    # b) nicht leeres ./bin?
+    src="$package/bin"
+    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return
+
+    # c) nicht leeres ./lib?
+    src="$package/lib"
+    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return
+
+    # d) nicht leeres ./etc?
+    src="$package/etc"
+    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return
+
+    # e) nicht leeres ./man?
+    src="$package/man"
+    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return
+
+    # f) ./files mit files.conf und mindestens einer weiteren Datei?
+    src="$package/files"
+    if [[ -d "$src" && -f "$src/files.conf" ]]; then
+        local num_files;  num_files=$(find "$src" -maxdepth 1 -type f | wc -l)
+        (( num_files > 1 )) && return
+    fi
+
+    # An dieser Stelle haben wir sichergestellt, dass das Verzeichnis nicht den
+    # Mindestanforderungen für ein Intallationspaket erfüllt
+    echo "Das ist kein Installationspaket: $(absPath "$package")"
+    echo "Siehe 'cdeploy help' für mehr Informationen."
+    exit 1
+}
+
 
 ## Liefert einen String zur Anzeige des Zielbereichs (Scope)
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
