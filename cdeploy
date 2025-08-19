@@ -72,11 +72,24 @@ sudo -k
 ## Globale Variablen & Kontanten
 ## ========================================================================================
 
+# Konstanten
+readonly _SCRIPT_NAME="cdeploy"
+readonly _SCRIPT_VERS="1.0"
+
 ACTION=""
 COUNT_ERR=0
 COUNT_WRN=0
 OPT_SCOPE=""
 PACKAGE=""
+SHOW_SYNOPSIS=0
+TITLE_SHOWN=0
+
+# Formatierungen
+readonly _BOLD="\033[1m"
+readonly _UNDER="\033[4m"
+readonly _BLINK="\033[5m"
+readonly _INVERT="\033[7m"
+readonly _RESET="\033[0m"
 
 
 
@@ -94,12 +107,16 @@ main() {
         help)
             cdeployShowHelpAndExit ;;
         install)
+            SHOW_SYNOPSIS=1
             cdeployInstall ;;
         remove)
+            SHOW_SYNOPSIS=1
             cdeployRemove ;;
         *)
             showSyntaxAndExit "Ungültige oder unvolständige Anweisung" ;;
     esac
+
+    quit 0
 }
 
 
@@ -184,8 +201,14 @@ parseParameters() {
 ## Installiert ein Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
+    # Titel und Beschreibung der Aktion ausgeben
+    showTitle
+
     local scope_str;  scope_str=$(getScopeStr)
-    showMsg "$(toCapitalized "${scope_str}")e Installation von Paket $PACKAGE"
+    showMsg "$(toCapitalized "${scope_str}")e Installation von Paket" \
+            "aus Quelle $(absPath "$PACKAGE")" \
+            "" \
+            ""
 
     # Paket prüfen
     checkPackageStructure "$PACKAGE"
@@ -195,8 +218,14 @@ cdeployInstall() {
 ## Entfernt ein installiertes Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployRemove() {
+    # Titel und Beschreibung der Aktion ausgeben
+    showTitle
+
     local scope_str;  scope_str=$(getScopeStr)
-    showMsg "Entfernen der ${scope_str}en Installation von Paket $PACKAGE"
+    showMsg "Entfernen der ${scope_str}en Installation von Paket" \
+            "aus Quelle $(absPath "$PACKAGE")" \
+            "" \
+            ""
 
     # Paket prüfen
     checkPackageStructure "$PACKAGE"
@@ -232,9 +261,11 @@ checkPackageStructure() {
 
 
     if [[ ! -e "$package" ]]; then
-        showError 1 "Das Paket wurde nicht gefunden: $(absPath "$package")"
+        showError 1 "Das Paket wurde nicht gefunden:" \
+                    "$(absPath "$package")"
     elif [[ ! -d "$package" ]]; then
-        showError 1 "Das ist kein Verzeichnis: $(absPath "$package")"
+        showError 1 "Das ist kein Verzeichnis:" \
+                    "$(absPath "$package")"
     fi
 
     local src=""
@@ -268,7 +299,8 @@ checkPackageStructure() {
 
     # An dieser Stelle haben wir sichergestellt, dass das Verzeichnis nicht den
     # Mindestanforderungen für ein Intallationspaket erfüllt
-    showError 1 "Das ist kein Installationspaket: $(absPath "$package")" \
+    showError 1 "Das ist kein Installationspaket:" \
+                "$(absPath "$package")" \
                 "Siehe 'cdeploy help' für mehr Informationen."
 }
 
@@ -281,6 +313,27 @@ getScopeStr() {
     else
         echo "lokal"
     fi
+}
+
+
+## Skript beenden
+## ---------------------------------------------------------------------
+quit() {
+    # Zusammenfassung zu Fehlern und Warnungen ausgeben
+    if [[ SHOW_SYNOPSIS -eq 1 ]]; then
+        local warn_str
+        [[ $COUNT_WRN -eq 1 ]] && warn_str="Warnung" || warn_str="Warnungen"
+        showMsg "" "${COUNT_WRN} ${warn_str}, ${COUNT_ERR} Fehler"
+    fi
+
+    # Darstellung beenden
+    if [[ -t 1 ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    fi
+    echo ""
+
+    # Skript mit übergebenen Returncode abschließen
+    exit "$1"
 }
 
 
@@ -305,7 +358,8 @@ showError() {
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
     # in jedem anderen Fall einfach den Fehlercode zurückgeben
     if [[ "$err_code" -ne 0 ]]; then
-        exit "$err_code"
+        echo
+        quit "$err_code"
     fi
 }
 
@@ -316,6 +370,25 @@ showMsg() {
     for msg in "$@"; do
         echo -e "$msg"
     done
+}
+
+
+## Titelzeile anzeigen
+## ---------------------------------------------------------------------
+showTitle() {
+    if [[ "$TITLE_SHOWN" -eq 1 ]]; then return; fi
+    TITLE_SHOWN=1
+
+    if [[ -t 1 ]]; then
+        echo
+        echo -e "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" \
+                "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
+    else
+        echo
+        echo -e "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" \
+                "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
+    fi
+    echo
 }
 
 
@@ -337,19 +410,20 @@ showWarning() {
 ## Anzeigen der gültigen Syntax und Abbrechen des Skripts
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showSyntaxAndExit() {
+    showTitle
+
     # optionale Fehlermeldungen ausgeben
     if [[ $# -gt 0 ]]; then
         showError 0 "$@"
+        echo
     fi
-    #for msg in "$@"; do
-    #    echo -e "$msg"
-    #done
 
     # Gültige Syntax ausgeben
-    echo -e "Syntax: cdeploy install --global|--local <package>"
-    echo -e "        cdeploy remove --global|--local <package>"
+    showMsg "Syntax: cdeploy help" \
+            "        cdeploy install --global|--local <package>" \
+            "        cdeploy remove --global|--local <package>"
 
-    exit 1
+    quit 1
 }
 
 
