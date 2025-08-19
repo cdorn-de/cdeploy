@@ -73,6 +73,8 @@ sudo -k
 ## ========================================================================================
 
 ACTION=""
+COUNT_ERR=0
+COUNT_WRN=0
 OPT_SCOPE=""
 PACKAGE=""
 
@@ -163,8 +165,7 @@ parseParameters() {
 
     # Auf Vollständigkeit prüfen
     if [[ ! -e "$PACKAGE" && -d "$PACKAGE" ]]; then
-        echo "Das angegebene Installationspaket existiert nicht."
-        exit 1
+        showError 1 "Das angegebene Installationspaket existiert nicht."
     fi
 
     if [[ -z "$OPT_SCOPE" ]]; then
@@ -184,7 +185,7 @@ parseParameters() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
     local scope_str;  scope_str=$(getScopeStr)
-    echo "$(toCapitalized "${scope_str}")e Installation von Paket $PACKAGE"
+    showMsg "$(toCapitalized "${scope_str}")e Installation von Paket $PACKAGE"
 
     # Paket prüfen
     checkPackageStructure "$PACKAGE"
@@ -195,7 +196,7 @@ cdeployInstall() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployRemove() {
     local scope_str;  scope_str=$(getScopeStr)
-    echo "Entfernen der ${scope_str}en Installation von Paket $PACKAGE"
+    showMsg "Entfernen der ${scope_str}en Installation von Paket $PACKAGE"
 
     # Paket prüfen
     checkPackageStructure "$PACKAGE"
@@ -231,11 +232,9 @@ checkPackageStructure() {
 
 
     if [[ ! -e "$package" ]]; then
-        echo "Das Paket wurde nicht gefunden: $(absPath "$package")"
-        exit 1
+        showError 1 "Das Paket wurde nicht gefunden: $(absPath "$package")"
     elif [[ ! -d "$package" ]]; then
-        echo "Das ist kein Verzeichnis: $(absPath "$package")"
-        exit 1
+        showError 1 "Das ist kein Verzeichnis: $(absPath "$package")"
     fi
 
     local src=""
@@ -269,9 +268,8 @@ checkPackageStructure() {
 
     # An dieser Stelle haben wir sichergestellt, dass das Verzeichnis nicht den
     # Mindestanforderungen für ein Intallationspaket erfüllt
-    echo "Das ist kein Installationspaket: $(absPath "$package")"
-    echo "Siehe 'cdeploy help' für mehr Informationen."
-    exit 1
+    showError 1 "Das ist kein Installationspaket: $(absPath "$package")" \
+                "Siehe 'cdeploy help' für mehr Informationen."
 }
 
 
@@ -286,13 +284,66 @@ getScopeStr() {
 }
 
 
-## Anzeigen der gültigen Syntax und Abbrechen des Skripts
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-showSyntaxAndExit() {
-    # optionale Meldungen ausgeben
+## Fehlermeldung ausgeben; Skript beenden, wenn Fehlercode <> 0
+## ---------------------------------------------------------------------
+showError() {
+    local err_code="$1"
+    shift  # entferne den ersten Parameter (Fehlercode) aus "$@"
+
+    # Fehlercounter anpassen; hat in Sub-Shells keine Auswirkung
+    # auf die Haupt-Shell
+    ((COUNT_ERR+=1))
+
+    # Alle übrigen Parameter als separate Zeilen ausgeben
+    echo -e "!!!! $1"
+    shift
+
+    for err_msg in "$@"; do
+        echo -e "  !! $err_msg"
+    done
+
+    # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
+    # in jedem anderen Fall einfach den Fehlercode zurückgeben
+    if [[ "$err_code" -ne 0 ]]; then
+        exit "$err_code"
+    fi
+}
+
+
+## Eine Meldung ausgeben
+## ---------------------------------------------------------------------
+showMsg() {
     for msg in "$@"; do
         echo -e "$msg"
     done
+}
+
+
+## Warnmeldung ausgeben
+## ---------------------------------------------------------------------
+showWarning() {
+    ((COUNT_WRN+=1))
+
+    # Alle Parameter als separate Zeilen ausgeben
+    echo -e "???? $1"
+    shift
+
+    for wrn_msg in "$@"; do
+        echo -e "  ?? $wrn_msg"
+    done
+}
+
+
+## Anzeigen der gültigen Syntax und Abbrechen des Skripts
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+showSyntaxAndExit() {
+    # optionale Fehlermeldungen ausgeben
+    if [[ $# -gt 0 ]]; then
+        showError 0 "$@"
+    fi
+    #for msg in "$@"; do
+    #    echo -e "$msg"
+    #done
 
     # Gültige Syntax ausgeben
     echo -e "Syntax: cdeploy install --global|--local <package>"
