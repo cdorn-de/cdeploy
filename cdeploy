@@ -9,7 +9,7 @@
 ##  ihre persönlichen Skripte und Daten auf zu wartenden Rechnern installieren müssen.
 ##
 ##  Features:
-##  - einfach zu pflegende Verzeichnisstruktur für zu installierende Daten
+##  - einfach zu pflegende Installationspakete; bestehen aus gewöhnlichen Verzeichnissen
 ##  - globale (für alle Benutzer) oder lokale Installation
 ##  - Aktionen 'install' und 'remove'
 ##
@@ -69,11 +69,34 @@ sudo -k
 
 
 ## ========================================================================================
+## Globale Variablen & Kontanten
+## ========================================================================================
+
+ACTION=""
+OPT_SCOPE=""
+PACKAGE=""
+
+
+
+
+## ========================================================================================
 ## main()-Methode
 ## ========================================================================================
 main() {
     # Parameter parsen
     parseParameters "$@"
+
+
+    # Aktion ausführen
+    case "$ACTION" in
+        install)
+            cdeployInstall ;;
+        remove)
+            cdeployRemove ;;
+        *)
+            echo "Unbekannte Aktion: $ACTION"
+            exit 1 ;;
+    esac
 }
 
 
@@ -81,7 +104,65 @@ parseParameters() {
     # Wenn keine Parameter übergeben wurden, Syntax anzeigen und beenden
     if [[ $# -lt 1 ]]; then
         echo "USAGE: cdeploy <command> [options] <package>"
-        exit 0
+        exit 1
+    fi
+
+
+    # Aktion auslesen; diese muss immer als erster Parameter gesetzt werden;
+    # Syntax anzeigen und abbrechen, wenn eine unbekannte Aktion gefunden wird
+    case "$1" in
+        install) ACTION="install" ;;
+        remove)  ACTION="remove" ;;
+        *)       echo "USAGE: cdeploy <command> [options] <package>"
+                 exit 1 ;;
+    esac
+
+    shift  # ersten Parameter entfernen
+
+
+    # Syntax anzeigen und abbrechen, wenn kein Parameter mehr vorhanden ist
+    if [[ $# -lt 1 ]]; then
+        echo "USAGE: cdeploy <command> [options] <package>"
+        exit 1
+    fi
+
+
+    # Installationspaket auslesen; das muss immer der letzte Parameter sein
+    PACKAGE="${!#}"
+    set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+
+
+    # Optionen auslesen
+    for arg in "$@"; do
+        case "$arg" in
+            # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
+            # die haben wir eingangs bereits ermittelt
+            install| \
+            remove)
+                echo "USAGE: cdeploy <command> [options] <package>"
+                exit 1 ;;
+            # Optionen
+            --global)
+                OPT_SCOPE="global" ;;
+            --local)
+                OPT_SCOPE="local" ;;
+            # Alle anderen: Syntax anzeigen und abbrechen
+            *)
+                echo "USAGE: cdeploy <command> [options] <package>"
+                exit 1 ;;
+        esac
+    done
+
+
+    # Auf Vollständigkeit prüfen
+    if [[ ! -e "$PACKAGE" ]]; then
+        echo "Das angegebene Installationspaket existiert nicht."
+        exit 1
+    fi
+
+    if [[ -z "$OPT_SCOPE" ]]; then
+        echo "USAGE: cdeploy <command> [options] <package>"
+        exit 1
     fi
 }
 
@@ -89,8 +170,23 @@ parseParameters() {
 
 
 ## ========================================================================================
-## Globale Variablen & Kontanten
+## Dispatcher-Methoden
 ## ========================================================================================
+
+## Installiert ein Paket
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdeployInstall() {
+    local scope_str;  scope_str=$(getScopeStr)
+    echo "$(toCapitalized "${scope_str}")e Installation von Paket $PACKAGE"
+}
+
+
+## Entfernt ein installiertes Paket
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdeployRemove() {
+    local scope_str;  scope_str=$(getScopeStr)
+    echo "Entfernen der ${scope_str}en Installation von Paket $PACKAGE"
+}
 
 
 
@@ -98,6 +194,40 @@ parseParameters() {
 ## ========================================================================================
 ## Hilfsmethoden
 ## ========================================================================================
+
+## Liefert einen String zur Anzeige des Zielbereichs (Scope)
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getScopeStr() {
+    if [[ "$OPT_SCOPE" == "global" ]]; then
+        echo "global"
+    else
+        echo "lokal"
+    fi
+}
+
+
+## Ändert das erste Zeichen im übergeben String in einen Großbuchstaben
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+toCapitalized() {
+    local text="$1"
+    echo "${text^}"
+}
+
+
+## Ändert alle Zeichen im übergebenen Strnig in Kleinbuchstaben
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+toLowercase() {
+    local text="$1"
+    echo "${text,,}"
+}
+
+
+## Ändert alle Zeichen im übergebenen String in Großbuchstaben
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+toUppercase() {
+    local text="$1"
+    echo "${text^^}"
+}
 
 
 
