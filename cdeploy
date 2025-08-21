@@ -402,11 +402,12 @@ cdeployShowPackageInfo() {
         showError 1 "Das angegebene Paket wurde nicht gefunden."
     fi
 
-# ääää
-    local hash;  hash="$(getFileHash "$filepath")"
+    # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
+    #                 Befehl gleichen Namens! Daher 'hsh' verwenden.
+    local hsh;  hsh="$(getFileHash "$filepath")"
     case $? in
-        1) hash="${hash} (Paket nicht gefunden)" ;;
-        2) hash="${hash} (kein SHA-Tool gefunden)" ;;
+        1) hsh="${hsh} (Paket nicht gefunden)" ;;
+        2) hsh="${hsh} (kein SHA-Tool gefunden)" ;;
     esac
 
     showMsg "Paketinformation" \
@@ -415,7 +416,7 @@ cdeployShowPackageInfo() {
         "Version..............: ${PROJECT_VERSION:-./.}" \
         "Ersteller............: ${PROJECT_CREATOR:-./.}" \
         "Quelle/URL...........: ${PROJECT_URL:-./.}" \
-        "Hash.................: $hash"
+        "Hash.................: $hsh"
         "Copyright............: ${PROJECT_COPYRIGHT:-./.}"
 
     showMsg "" \
