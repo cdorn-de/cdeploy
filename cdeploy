@@ -416,7 +416,7 @@ cdeployShowPackageInfo() {
         "Version..............: ${PROJECT_VERSION:-./.}" \
         "Ersteller............: ${PROJECT_CREATOR:-./.}" \
         "Quelle/URL...........: ${PROJECT_URL:-./.}" \
-        "Hash.................: $hsh"
+        "Hash.................: $hsh" \
         "Copyright............: ${PROJECT_COPYRIGHT:-./.}"
 
     showMsg "" \
@@ -1125,7 +1125,7 @@ manifestAppend() {
     [ -f "$filepath" ] || return 1
 
     # SHA256 Hash ermitteln
-    local hash;  hash=getFileHash "$filepath"
+    local hash;  hash="$(getFileHash "$filepath")"
 
     # Dateigröße und mtime ermitteln
     local size mtime
