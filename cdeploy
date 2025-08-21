@@ -76,13 +76,32 @@ sudo -k
 readonly _SCRIPT_NAME="cdeploy"
 readonly _SCRIPT_VERS="1.0"
 
+# Skript-Konfiguration
+PROJECT_NAME="tools"
+PROJECT_VERSION=""
+
 ACTION=""
+BASE_GLOBAL="/usr/local"
+BASE_LOCAL="$HOME/.local"
+COUNT_CPY=0
 COUNT_ERR=0
 COUNT_WRN=0
+ENV_PATH_SET=0
+MANIFEST_FILE=""
+OPT_DRYRUN=0
+OPT_QUIET=0
 OPT_SCOPE=""
 PACKAGE=""
 SHOW_SYNOPSIS=0
+TARGET_BASE=""
+TARGET_BIN=""
+TARGET_ETC=""
+TARGET_LIB=""
+TARGET_MAN=""
+TARGET_MANIFEST=""
+TARGET_SYM=""
 TITLE_SHOWN=0
+USE_SUDO=""
 
 # Formatierungen
 readonly _BOLD="\033[1m"
@@ -98,6 +117,11 @@ readonly _RESET="\033[0m"
 ## main()-Methode
 ## ========================================================================================
 main() {
+    # Sicherstellen dass beim Beenden oder Abbrechen des Skriptes korrekt aufgeräumt wird.
+    # Nur der Abbruch mit SIGKILL ('kill -9') lässt sich nicht abfangen.
+    trap finalCleanup EXIT INT TERM HUP
+
+
     # Parameter parsen
     parseParameters "$@"
 
@@ -107,10 +131,8 @@ main() {
         help)
             cdeployShowHelpAndExit ;;
         install)
-            SHOW_SYNOPSIS=1
             cdeployInstall ;;
         remove)
-            SHOW_SYNOPSIS=1
             cdeployRemove ;;
         *)
             showSyntaxAndExit "Ungültige oder unvolständige Anweisung" ;;
@@ -170,9 +192,17 @@ parseParameters() {
             remove)
                 showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
             # Optionen
+            --dry-run|-d)
+                assertIsFalse "dry run" $OPT_DRYRUN
+                OPT_DRYRUN=1 ;;
+            --quiet)
+                assertIsFalse "quiet" $OPT_QUIET
+                OPT_QUIET=1 ;;
             --global)
+                assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="global" ;;
             --local)
+                assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
             # Alle anderen: Syntax anzeigen und abbrechen
             *)  showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
@@ -201,41 +231,124 @@ parseParameters() {
 ## Installiert ein Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
+    # Paket und Zielverzeichnisse prüfen
+    checkPackageStructure "$PACKAGE"
+    loadConfigFile
+    getInstallerTargets
+
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
 
-    local scope_str;  scope_str=$(getScopeStr)
-    showMsg "$(toCapitalized "${scope_str}")e Installation von Paket" \
+    local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
+                        && scope_str="Globale" || scope_str="Lokale"
+    showMsg "${scope_str} Installation von Paket '$(getProjectInfo "")'" \
             "aus Quelle $(absPath "$PACKAGE")" \
             "" \
             ""
 
-    # Paket prüfen
-    checkPackageStructure "$PACKAGE"
+    # Zugriffsrechte prüfen, ggf. Kennwort für sudo abfragen
+    checkPermissions
+
+    SHOW_SYNOPSIS=1
+
+
+    ##### AB HIER WERDEN WIRKLICH ÄNDERUNGEN VORGENOMMEN #####
+
+
+    # Wenn eine lokale Installation stattfindet, sicherstellen, dass
+    # die lokalen Pfade ~/.local/bin in $PATH und ~/.local/share/man
+    # in $MANPATH vorhanden sind
+    if [[ "$OPT_SCOPE" == "local" ]]; then
+        ensureLocalPath PATH "$HOME/.local/bin"
+        ensureLocalPath MANPATH "$HOME/.local/share/man"
+    fi
+
+    # Verzeichnis ./bin kopieren
+    src="${PACKAGE}/bin"
+    if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
+        showMsg "Kopiere Programme..."
+        copyFiles "bin" "$src" "$TARGET_BIN"
+        # Anstatt die PATH-Variable anzupassen legen wir Symlinks in
+        # ~/.local/bin bzw. /usr/local/bin an – abhängig vom OPT_SCOPE.
+        # Diese beiden Pfade sind normalerweise immer in PATH enthalten.
+        showMsg "  => Erstelle Symlinks..."
+        makeSymlinks "$TARGET_BIN" "$TARGET_SYM"
+        showMsg ""
+    fi
+
+    # Verzeichnis ./lib kopieren
+    src="${PACKAGE}/lib"
+    if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
+        showMsg "Kopiere Bibliotheken..."
+        copyFiles "lib" "$src" "$TARGET_LIB"
+        showMsg ""
+    fi
+
+    # Verzeichnis ./etc kopieren
+    src="${PACKAGE}/etc"
+    if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
+        showMsg "Kopiere Konfigurationsdateien..."
+        copyFiles "etc" "$src" "$TARGET_ETC"
+        showMsg ""
+    fi
+
+    # Man-Pages installieren
+    src="${PACKAGE}/man"
+    if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
+        showMsg "Installiere Man-Pages..."
+        installManpages "$src"
+        showMsg ""
+    fi
+
+    # Freies Kopieren von Dateien
+    src="${PACKAGE}/files"
+    if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
+        showMsg "Kopiere Dateien..."
+        freeCopy "${src}/files.conf" "$src"
+        showMsg ""
+    fi
+
+
+    showMsg "" "Installation abgeschlossen."
+    case $COUNT_CPY in
+        0)  showMsg "Es wurden keine Dateien kopiert"  ;;
+        1)  showMsg "Es wurde 1 Datei kopiert." ;;
+        *)  showMsg "Es wurden ${COUNT_CPY} Dateien kopiert." ;;
+    esac
+    showMsg ""
 }
 
 
 ## Entfernt ein installiertes Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployRemove() {
+    # Paket und Zielverzeichnisse prüfen
+    checkPackageStructure "$PACKAGE"
+    loadConfigFile
+    getInstallerTargets
+
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
 
-    local scope_str;  scope_str=$(getScopeStr)
-    showMsg "Entfernen der ${scope_str}en Installation von Paket" \
+    local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
+                        && scope_str="Globale" || scope_str="Lokale"
+    showMsg "Entfernen der ${scope_str} Installation von Paket" \
             "aus Quelle $(absPath "$PACKAGE")" \
             "" \
             ""
 
-    # Paket prüfen
-    checkPackageStructure "$PACKAGE"
+    # Zugriffsrechte prüfen, ggf. Kennwort für sudo abfragen
+    checkPermissions
+
+    SHOW_SYNOPSIS=1
 }
 
 
 ## Hilfeseite (Manpage) anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployShowHelpAndExit() {
-    echo "Hier steht die Hilfeseite."
+    showMsg "Hier steht die Hilfeseite."
+    exit 0
 }
 
 
@@ -247,15 +360,41 @@ cdeployShowHelpAndExit() {
 
 
 ## Relativen Pfad absolut ausgeben
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 absPath() {
     echo "$(cd "$(dirname -- "$1")" && pwd)/$(basename -- "$1")"
 }
 
 
+## Prüfen ob eine Variable bereits einen Wert enthält
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+assertIsEmpty() {
+    local parname="$1"
+    local value="$2"
+
+    if [[ -n "$value" ]]; then
+        showError 0 "Der Parameter '$parname' wurde bereits übergeben." ""
+        showUsageAndExit
+    fi
+}
+
+
+## Prüfen ob die übergebene Variable einen Wert ungleich 1 hat (false)
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+assertIsFalse() {
+    local parname="$1"
+    local value="$2"
+
+    if [[ "$value" -eq 1 ]]; then
+        showError 0 "Der Parameter ''$parname' wurde bereits übergeben." ""
+        showUsageAndExit
+    fi
+}
+
+
 ## Prüfen ob ein Verzeichnis die Mindestanforderungen für ein
 ## Installationspaket erfüllt
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 checkPackageStructure() {
     local package="$1"
 
@@ -305,6 +444,357 @@ checkPackageStructure() {
 }
 
 
+## Zugriffsrechte (Schreibrechte) für übergebenes Objekt prüfen; wenn nötig, sudo-Kennwort
+## abfragen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+checkPermissions() {
+    # Wenn die Installation global erfolgt, prüfen wir zuerst die Ordner ./bin, ./etc,
+    # ./lib und ./man. Wenn in einem dieser Verzeichnisse Dateien sind, Kennwort abfragen
+    # und Prüfung beenden.
+    if [[ $OPT_SCOPE == "global" ]]; then
+        for d in "$TARGET_BIN" "$TARGET_LIB" "$TARGET_ETC" "$TARGET_MAN"; do
+            if ! dirIsEmpty "$d"; then
+                sudoLogin
+                return 0
+            fi
+        done
+    fi
+
+    # Wenn in der ersten Prüfung kein sudo-Kennwort notwendig war, müssen jetzt die
+    # Einträge in der Datei 'files.conf' geprüft werden. Sobald eines der Verzeichnisse
+    # sudo benötigt, Kennwort abfragen und Prüfung beenden.
+    if [[ $USE_SUDO == "" ]]; then
+        local files_conf="${PACKAGE}/files.conf"
+
+        # Wenn files.conf nicht existiert → kein sudo nötig
+        [[ -f "$files_conf" ]] || return 0
+
+        # 2.2 Alle Zielpfade auslesen
+        while IFS= read -r line; do
+            # Leerzeilen und Kommentare überspringen
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+            # Quelle und Ziel trennen (z. B. "foo.txt   /usr/bin")
+            local src dest
+            read -r src dest <<<"$line"
+
+            # Wenn kein Ziel angegeben → überspringen
+            [[ -z "$dest" ]] && continue
+
+            # Prüfen, ob Zielverzeichnis Schreibrechte erfordert
+            local target_dir
+            target_dir=$(dirname "$dest")
+
+            if [[ ! -w "$target_dir" ]]; then
+                sudoLogin
+                return 0
+            fi
+        done < "$files_conf"
+    fi
+}
+
+
+## Datei(en) in Verzeichnis $2 nach $3 kopieren
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+copyFiles() {
+    local category="$1"
+    local src_dir="$2"
+    local dest_dir="$3"
+
+    if [ -d "$src_dir" ]; then
+        shopt -s nullglob
+        safeRun mkdir -p "$dest_dir"
+
+        for f in "$src_dir"/*; do
+            [ -f "$f" ] || continue
+            if safeRun cp -u "$f" "$dest_dir/"; then
+                safeRun chmod 755 "$dest_dir/$(basename "$f")" \
+                    "MSG:  -> $dest_dir/$(basename "$f")"
+                manifestAppend "$dest_dir/$(basename "$f")" "$category"
+                ((COUNT_CPY+=1))
+            fi
+        done
+        shopt -u nullglob
+    fi
+}
+
+
+## Prüfen ob ein Verzeichnis leer ist
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+dirIsEmpty() {
+    local path="$1"
+
+    # Wenn Pfad nicht existiert -> prüfe Elternverzeichnis
+    if [[ ! -e "$path" ]]; then
+        path=$(dirname "$path")
+    fi
+
+    # Wenn keine Directory -> false
+    if [[ ! -d "$path" ]]; then
+        return 1
+    fi
+
+    # Wenn Verzeichnis nicht leer -> false
+    if [[ $(find "$path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) -gt 0 ]]; then
+        return 1
+    fi
+
+    # Leeres Verzeichnis -> true
+    return 0
+}
+
+
+## Sicherstellen, dass der übergebene Pfad existiert und in der Umgebungsvariablen
+## vorhanden ist. Die Methode akzeptiert keine Pfade, die Doppelpunkte (:) enthalten,
+## da Doppelpunkte in PATH und MANPATH eine besondere Bedeutung als Trennzeichen
+## haben. Außerdem wird sichergestellt, dass MANPATH immer mindestens den Standardpfad
+## für Man-Pages enthält.
+##
+## Die Pfadvariablen werden erweitert, indem der neue Pfad ANGEHÄNGT wird, nicht, wie viele
+## Programme es machen, vorangestellt. Die Pfade in den Umgebungsvariablen werden von vorne
+## nach hinten durchsucht, und die erste gefundene Datei wird verwendet. Würde $target an
+## den Anfang gestellt, könnten – unabsichtlich oder absichtlich – Systemprogramme oder
+## Dateien verdeckt werden.
+##
+## Die Erweiterungen von PATH und MANPATH werden in ~/.profile eingetragen, da diese
+## von (den meisten) Shells ausgewertet wird.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+ensureLocalPath() {
+    local varname="$1"
+    local target="$2"
+    local profile="$HOME/.profile"
+
+    # Doppelpunkte sind in PATH-ähnlichen Variablen verboten. Wenn das Ziel Doppelpunkte
+    # enthält, wird das Skript mit einer Fehlermdelung abgebrochen.
+    # Wenn der Pfad ok ist, wird er angelegt, falls er noch nicht existiert.
+    [[ "$target" == *:* ]] && showError 1 "Pfade mit Doppelpunkt (':') werden nicht unterstützt."
+    [ -d "$target" ] || safeRun mkdir -p "$target"
+
+    # Aktuellen Wert der Umgebungsvariablen ermitteln, falls vorhanden
+    local current_value=""
+    if [[ -n ${!varname-} ]]; then
+        current_value="${!varname}"
+    fi
+
+    # Falls MANPATH leer ist, den System-Standard verwenden. Dadurch kann MANPATH niemals
+    # leer sein. Das ist wichtig, weil 'man' keinen Fallback besitzt, und bei leerem
+    # MANPATH somit überhaupt keine Man-Pages mehr gefunden würden.
+    if [[ "$varname" == "MANPATH" && -z "$current_value" ]]; then
+        current_value=$(man --path 2>/dev/null)
+    fi
+
+    # Wenn $target bereits in der Umgebungsvariablen vorhanden ist, kann die Methode an
+    # dieser Stelle beendet werden.
+    case ":$current_value:" in
+        *":$target:"* | *":$target" | "$target:"* | "$target") return 0 ;;
+    esac
+
+    # Neue Pfadeinstellung in der aktiven Shell aktivieren
+    [[ -n "$current_value" ]] && current_value="$current_value:$target" || current_value="$target"
+    eval "export $varname=\"\$$current_value:$target\""
+
+    # Den erweiterten Pfad in ~/.profile eintragen, wenn er dort noch nicht vorhanden ist.
+    # Der Eintrag wird eindeutig markiert.
+    if [ "$OPT_DRYRUN" -eq 0 ] && \
+        ! grep -Eq "^export[[:space:]]+$varname=.*(^|:)$target(:|$)" "$profile" 2>/dev/null; then
+        # Start der Änderung in ~/.profile markieren; das Ende wird beim Beenden des
+        # Skriptes geschrieben.
+        if isFalse "$ENV_PATH_SET"; then
+            {
+                echo ""
+                echo "# >>> cdeploy initialize >>>"
+                echo "# Setting path(s) for cdeploy"
+                ENV_PATH_SET=1
+            } >> "$profile"
+        fi
+
+        # Die Pfadanpassung für PATH und MANPATH muss unterschiedlich sein
+        # shellcheck disable=SC2016
+        case "$varname" in
+            PATH)
+                echo "export $varname=\"\$$varname:$target\"" >> "$profile" ;;
+            MANPATH)
+cat <<EOF >> ~/.profile
+if [[ -z "\$MANPATH" ]]; then
+    MANPATH="\$(man --path 2>/dev/null || echo \"$TARGET_MAN\")"
+fi
+export MANPATH="\$MANPATH:$TARGET_MAN"
+EOF
+        esac
+
+        eval "export $varname=\"\$$varname:$target\""
+
+        # Rückmeldung an den Benutzer
+        case $- in
+            *i*)  # shellcheck disable=SC1090
+                  . "$profile" && showMsg "  -> \$$varname wurde aktualisiert." ;;
+            *)    showMsg "  -> \$$varname wurde angepasst. Bitte das Terminal neu starten." "" ;;
+        esac
+    fi
+}
+
+
+## Daten an eine Datei anhängen. Die Datei wird bei Bedarf automatisch
+## erzeugt, und falls nötig wird eine sudo-Berechtigung abgefragt und
+## angewandt.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+fileAppend() {
+    local datei="$1"
+    shift || return 1
+
+    local status=0
+
+    # +e erlaubt Fehlerhandling ohne Skriptabbruch
+    set +e
+    # Alle Zeilen gesammelt anhängen
+    printf "%s\n" "$@" | $USE_SUDO tee -a "$datei" >/dev/null
+    status=$?
+    set -e
+
+    if (( status != 0 )); then
+        showError 1 "Manifest kann nicht geschrieben werden: $datei"
+    fi
+
+    return $status
+}
+
+
+## Aufräumen beim Beenden oder Abbrechen des Skriptes
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+finalCleanup() {
+    # Zuerst alle Traps entfernen, um Rekursionen zu vermeiden
+    trap - EXIT INT TERM HUP
+
+    # Offenen Eintrag in ~/.profile abschließen
+    if isFalse "$OPT_DRYRUN" && isTrue "$ENV_PATH_SET"; then
+        echo "# <<< cdeploy initialize <<<" >> "$HOME/.profile"
+    fi
+
+    # Verwendung von sudo deaktivieren
+    USE_SUDO=""
+}
+
+
+## Freies Kopieren von Dateien und Verzeichnissen im ./files Verzeichnis
+## des Installationspaketes. Das Ziel für diese Objekte muss in der
+## Datei ./files/files.conf definiert werden.
+## Beispiel:
+##     foo.txt ~/Dokumente
+##     bar.txt ~/Dokumente/
+##     summary ~/Dokumente/digest.txt
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+freeCopy() {
+    local def_file="$1"  # Konfigurationsdatei für das Kopieren
+    local src_base="$2"  # Quellverzeichnis im Paket
+    local output status
+    local src dest
+    local src_path dest_path
+
+    [ -f "$def_file" ] || \
+        { showWarning "Keine Konfigurationsdatei für das Kopieren gefunden."; return; }
+
+    set +e
+    while IFS=$'\t ' read -r src dest || [ -n "$src" ]; do
+        # Kommentare und leere Zeilen überspringen
+        [[ -z "$src" || "$src" =~ ^# ]] && continue
+
+        # Quell- und Zielpfad einstellen
+        src_path="$src_base/$src"
+        dest_path="$dest"
+
+        if [ ! -e "$src_path" ]; then
+            showWarning "Die Quelldatei existiert nicht." \
+                        "$src_path"
+            continue
+        elif [ -d "$src_path" ]; then
+            showWarning "Es werden keine Verzeichnisse kopiert!" \
+                        "Mehr Informationen finden Sie hier: 'cdeploy --help'." \
+                        "$src_path"
+            continue
+        fi
+
+        # Zielverzeichnis erstellen; wenn eine Tile am Anfang des Zielpfades steht,
+        # ersetze sie durch den absoluten Pfad zum Benutzerverzeichnis
+        [[ "$dest_path" == ~* ]] && dest_path="${dest_path/#\~/$HOME}"
+        if [ ! -e "$dest_path" ]; then
+            if [[ "$dest_path" == */ ]]; then
+                safeRun mkdir -p "$dest_path"
+            else
+                safeRun mkdir -p "$(dirname "$dest_path")"
+            fi
+        fi
+
+        # Datei aus dem Paket in das Ziel kopieren
+        if [ -d "$dest_path" ] || [[ "$dest_path" == */ ]]; then
+            # $dest_path ist ein Verzeichnis
+            if safeRun cp -uT "$src_path" "$dest_path" \
+                 "MSG:  -> V $src -> $dest_path"; then
+                manifestAppend "$dest_path" "files"
+                ((COUNT_CPY+=1))
+            fi
+        else
+            # $dest_path ist eine Datei
+            if safeRun cp -u "$src_path" "$dest_path" \
+                 "MSG:  -> D $src -> $dest_path"; then
+                manifestAppend "$dest_path" "files"
+                ((COUNT_CPY+=1))
+            fi
+        fi
+    done < "$def_file"
+    set -e
+}
+
+
+## Zielverzeichnisse für (De-)Installation ermitteln und an die
+## globalen Variablen übertragen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getInstallerTargets() {
+    # Zielverzeichnisse ermitteln
+    case "$OPT_SCOPE" in
+        global)
+            TARGET_BASE="${BASE_GLOBAL}/${PROJECT_NAME}"
+            TARGET_MAN="/usr/share/man"
+            TARGET_SYM="/usr/local/bin"
+            TARGET_MANIFEST="/usr/local/share"
+            ;;
+        local)
+            TARGET_BASE="${BASE_LOCAL}/${PROJECT_NAME}"
+            TARGET_MAN="$HOME/.local/share/man"
+            TARGET_SYM="$HOME/.local/bin"
+            TARGET_MANIFEST="$HOME/.local/share"
+            ;;
+        *)
+            showError 1 "Unbekannter Zielbereich, oder Zielbereich nicht definiert: '$OPT_SCOPE'" ;;
+    esac
+
+    TARGET_BIN="${TARGET_BASE}/bin"
+    TARGET_LIB="${TARGET_BASE}/lib"
+    TARGET_ETC="${TARGET_BASE}/etc"
+
+    for var in PROJECT_NAME TARGET_BASE TARGET_BIN TARGET_ETC TARGET_LIB TARGET_MAN \
+                TARGET_MANIFEST TARGET_SYM; do
+        validateVar "$var"
+    done
+}
+
+
+## Liefert die Projektinformation (Name + Version) als String
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getProjectInfo() {
+    local divider="${1:- }"
+
+    if isEmpty "$PROJECT_NAME"; then
+        PROJECT_NAME="tools"
+    fi
+
+    if isEmpty "$PROJECT_VERSION"; then
+        echo "$PROJECT_NAME"
+    else
+        echo "${PROJECT_NAME}${divider}${PROJECT_VERSION}"
+    fi
+}
+
+
 ## Liefert einen String zur Anzeige des Zielbereichs (Scope)
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 getScopeStr() {
@@ -316,29 +806,287 @@ getScopeStr() {
 }
 
 
-## Skript beenden
+## Installieren der Man-Pages aus dem Installationspaket
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+installManpages() {
+    local src_dir="$1"
+    local dest_dir="$TARGET_MAN"
+    local target_dir
+
+    if [ -d "$src_dir" ]; then
+        # Kopiere die Dateien aus dem Paket an den Zielort; passe die Zugriffsrechte
+        # an (644); wandle die kopierte Man-Page in eine .gz-Datei, wenn möglich;
+        # trage die fertige Datei ins Manifest ein
+        for manfile in "$src_dir"/*.[1-9]; do
+            [ -f "$manfile" ] || continue
+            section="${manfile##*.}"
+            target_dir="$dest_dir/man$section"
+            safeRun mkdir -p "$target_dir"
+            if safeRun cp -u "$manfile" "$target_dir/" \
+                 "MSG:  -> $target_dir/$(basename "$manfile").gz"; then
+                safeRun chmod 644 "$target_dir/$(basename "$manfile")"
+                ((COUNT_CPY+=1))
+                if safeRun gzip -f "$target_dir/$(basename "$manfile")"; then
+                    manifestAppend "$target_dir/$(basename "$manfile".gz)" "man"
+                else
+                    manifestAppend "$target_dir/$(basename "$manfile"*)" "man"
+                fi
+            fi
+        done
+
+        # Man-Datenbank aktualisieren
+        if [ "$OPT_SCOPE" = "global" ]; then
+            showMsg "  => Aktualisiere globale Man-Datenbank..."
+            if ! $USE_SUDO mandb -q; then
+                showWarning "Die globale Man-Datenbank konnte nicht aktualisiert werden."
+            fi
+        else
+            showMsg "  => Aktualisiere lokale Man-Datenbank..."
+            if ! mandb -q -u; then
+                showWarning "Die lokale Man-Datenbank konnte nicht aktualisiert werden."
+            fi
+        fi
+    fi
+}
+
+
+## Prüfen ob eine Variable leer ist
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+isEmpty() {
+    if [ -z "$1" ] || [ "$1" == "" ]; then
+        return 0
+    fi
+    return 1
+}
+
+
+## Behandelt die übergebene Variable als Boolean und gibt 0 zurück, wenn diese leer oder
+## '0' ist, ansonsten 1
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+isFalse() {
+    case "$1" in
+        ""|0) return 0 ;;
+        *)    return 1 ;;
+    esac
+}
+
+
+## Behandelt die übergebene Variable als Boolean; kehrt den Rückgabewert von 'isFalse' um.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+isTrue() {
+    isFalse "$1"; return $((1 - $?))
+}
+
+
+## Konfigurationsdatei einbinden
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+loadConfigFile() {
+    local config_file="${PACKAGE}/cdeploy.conf"
+
+    if [[ -f "$config_file" ]]; then
+        if ! bash -n "$config_file" 2>/dev/null; then
+            showError 1 "Die Konfigurationsdatei hat ein ungültiges Format." "$config_file"
+        fi
+        # shellcheck disable=SC1090
+        source "$config_file"
+    fi
+}
+
+
+## Symlinks auf alle Objekte in 'dest_dir' erstellen, die auch in
+## 'src_dir' vorhanden sind. Damit soll vermieden werden, dass die PATH
+## Variable angepasst werden muss, um die kopierten Skripte global
+## ausführbar zu machen.
+## 'dest_dir' sollte abhängig vom Scope entweder /usr/local/bin oder
+## ~/.local/bin sein.
 ## ---------------------------------------------------------------------
+makeSymlinks() {
+    local src_dir="$1"
+    local dest_dir="$2"
+    local dest_file
+
+    if [ -d "$src_dir" ]; then
+        safeRun mkdir -p "$dest_dir"
+        for f in "$src_dir"/*; do
+            [ -f "$f" ] || continue
+            dest_file="$dest_dir/$(basename "$f")"
+            safeRun ln -sf "$f" "$dest_file" \
+                 "MSG:     -> $dest_file -> $f"
+            manifestAppend "$dest_file" "link"
+        done
+    fi
+}
+
+
+## Enitrag zur Manifest-Datei hinzufügen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+manifestAppend() {
+    # Bei Testläufen wird kein Manifest geschrieben; abbrechen
+    if [ "$OPT_DRYRUN" -ne 0 ]; then return 0; fi
+
+
+    # Wenn nötig, Header für Manifest-Datei schreiben
+    if [[ -z "$MANIFEST_FILE"  ]]; then manifestInit; fi
+
+    # übergebene Dateiinformationen lesen und prüfen
+    local filepath="$1"
+    local category="$2"
+
+    [ -f "$filepath" ] || return 1
+
+    # SHA256 Hash ermitteln
+    local hash size mtime
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash=$(sha256sum "$filepath" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        hash=$(shasum -a 256 "$filepath" | awk '{print $1}')
+    else
+        hash="n/a"
+    fi
+
+    # Dateigröße und mtime ermitteln
+    if stat --version >/dev/null 2>&1; then
+        # GNU stat (Linux)
+        size=$(stat -c%s "$filepath")
+        mtime=$(stat -c%Y "$filepath")
+    else
+        # BSD/macOS stat
+        size=$(stat -f%z "$filepath")
+        mtime=$(stat -f%m "$filepath")
+    fi
+
+    # Zeile ins Manifest schreiben
+    fileAppend "$MANIFEST_FILE" "${filepath}\t${hash}\t${mtime}\t${category}\t${size}"
+}
+
+
+## Manifest-Datei anlegen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+manifestInit() {
+    # Bei Testläufen wird kein Manifest geschrieben; abbrechen
+    if [ "$OPT_DRYRUN" -ne 0 ]; then return 0; fi
+
+
+    # Bestimmen der Manifestdatei
+    safeRun mkdir -p "$TARGET_MANIFEST"
+
+    MANIFEST_FILE="${TARGET_MANIFEST}/$(getProjectInfo -).manifest"
+    if [ -f "$MANIFEST_FILE" ]; then
+        safeRun rm "$MANIFEST_FILE"
+    fi
+
+    # Header schreiben
+    local install_date;  install_date=$(date -Iseconds)
+
+    fileAppend "$MANIFEST_FILE" \
+        "###" \
+        "# ${_SCRIPT_NAME} v${_SCRIPT_VERS} – Manifest" \
+        "# Projekt...........: ${PROJECT_NAME} v${PROJECT_VERSION}" \
+        "# Installationsdatum: $install_date" \
+        "# Quelle/Paket......: $(absPath "$PACKAGE")" \
+        "#" \
+        "# Zielpfad\tHash_SHA256\tmtime\tKategorie\tGröße" \
+        "###" \
+        ""
+}
+
+
+## Skript beenden
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 quit() {
     # Zusammenfassung zu Fehlern und Warnungen ausgeben
-    if [[ SHOW_SYNOPSIS -eq 1 ]]; then
+    if isTrue $SHOW_SYNOPSIS; then
         local warn_str
         [[ $COUNT_WRN -eq 1 ]] && warn_str="Warnung" || warn_str="Warnungen"
-        showMsg "" "${COUNT_WRN} ${warn_str}, ${COUNT_ERR} Fehler"
+        showMsg "${COUNT_WRN} ${warn_str}, ${COUNT_ERR} Fehler"
+    fi
+
+    # Ggf. Hinweis auf Testlauf ausgeben
+    if isTrue "$OPT_DRYRUN"; then
+        showMsg "" \
+                "" \
+                "     !!! ============================================================== !!!" \
+                "     !!!  DAS WAR EIN TESTLAUF. ES WURDEN KEINE ÄNDERUNGEN VORGENOMMEN  !!!" \
+                "     !!!                ES WURDEN KEINE DATEIEN KOPIERT                 !!!" \
+                "     !!!               ES WURDE KEIN MANIFEST GESCHRIEBEN               !!!" \
+                "     !!! ============================================================== !!!" \
+                "" \
+                ""
     fi
 
     # Darstellung beenden
-    if [[ -t 1 ]]; then
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if isFalse "$OPT_QUIET"; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
+        echo "" > /dev/tty
     fi
-    echo ""
+
+    if [[ ! -t 1 ]]; then
+        echo "===================================================================================="
+    fi
 
     # Skript mit übergebenen Returncode abschließen
     exit "$1"
 }
 
 
+## Anweisung sicher ausführen; automatisch sudo-Berechtigung verwenden,
+## wenn nötig; bei Fehler Meldung ausgeben und Fehlercode zurückgeben
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+safeRun() {
+    local args=("$@")
+    local msg=""
+    local output
+    local status=0
+
+    # Optional: Den letzten Parameter als Meldung verwenden, wenn er mit 'MSG:' beginnt.
+    #           Anschließend den letzten Parameter entfernen.
+    if [[ "${args[-1]}" == MSG:* ]]; then
+        msg="${args[-1]#MSG:}"   # entfernt das Präfix
+        unset 'args[-1]'         # entfernt letzten Parameter aus dem Befehl
+    fi
+
+    # Das letze Argument ist (jetzt) der Zielpfad. Falls er mit einer Tile beginnt, diese
+    # durch den absoluten Pfad zum Benutzerverzeichnis ersetzen.
+    local target="${args[-1]}"
+    [[ "$target" == ~* ]] && target="${target/#\~/$HOME}"
+
+    # Prüfen ob die sudo-Anmeldung noch gültig ist; ein erneutes Login aber nur durchführen,
+    # wenn beim Start des Skriptes schon eine Anmeldung erfolgreich war
+    if [[ "$USE_SUDO" == "sudo" ]] && ! sudo -n true; then
+        showMsg "   Die Administratorrechte sind abgelaufen. Bitte melden Sie sich erneut an."
+        sudoLogin
+    fi
+
+    # Befehl ausführen; dazu das Abbruchkriterium -e (abbrechen, wenn Returncode ≠ 0)
+    # kurzzeitig außer Kraft setzen, damit bei einem Fehler die nachfolgenden Dateien
+    # noch verarbeitet werden; für nicht verarbeitete Dateien wird eine Fehlermeldung
+    # ausgegeben
+    if [ "$OPT_DRYRUN" -eq 0 ]; then
+        set +e
+        output=$($USE_SUDO "${args[@]}" 2>&1)
+        status=$?
+        set -e
+    fi
+
+    # Fehler ausgeben, falls der Befehl fehlgeschlagen ist, und den Returncode des Befehls
+    # zurückgeben.
+    if [ "$status" -ne 0 ]; then
+        local err_msg="${output##*:}"
+        showError 0 "${err_msg#"${err_msg%%[! ]*}"}"
+        return $status
+    fi
+
+    # Wenn als letzter Parameter eine Meldung übergeben wurde (s.o.), muss diese jetzt
+    # ausgegeben werden
+    if [[ -n "$msg" ]]; then showMsg "$msg"; fi
+    return 0
+}
+
+
 ## Fehlermeldung ausgeben; Skript beenden, wenn Fehlercode <> 0
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showError() {
     local err_code="$1"
     shift  # entferne den ersten Parameter (Fehlercode) aus "$@"
@@ -348,62 +1096,95 @@ showError() {
     ((COUNT_ERR+=1))
 
     # Alle übrigen Parameter als separate Zeilen ausgeben
-    echo -e "!!!! $1"
+    showTitle
+
+    # Ausgabe im Terminal
+    local line="$1"
     shift
 
-    for err_msg in "$@"; do
-        echo -e "  !! $err_msg"
-    done
+    if isFalse "$OPT_QUIET"; then
+        printf "!!!! %s\n" "$line" > /dev/tty
+        printf "  !! %s\n" "$@" > /dev/tty
+    fi
+
+    # Ausgabe in Datei/Umleitung
+    if [[ ! -t 1 ]]; then
+        printf "!!!! %s\n" "$line"
+        printf "  !! %s\n" "$@"
+    fi
+
 
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
     # in jedem anderen Fall einfach den Fehlercode zurückgeben
     if [[ "$err_code" -ne 0 ]]; then
-        echo
+        if isFalse "$OPT_QUIET"; then echo > /dev/tty; fi
         quit "$err_code"
     fi
 }
 
 
 ## Eine Meldung ausgeben
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showMsg() {
-    for msg in "$@"; do
-        echo -e "$msg"
-    done
+    # Ausgabe im Terminal
+    if isFalse "$OPT_QUIET"; then
+        printf "%s\n" "$@" > /dev/tty
+    fi
+
+    # Ausgabe in Datei/Umleitung
+    if [[ ! -t 1 ]]; then
+        printf "%s\n" "$@"
+    fi
 }
 
 
 ## Titelzeile anzeigen
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showTitle() {
-    if [[ "$TITLE_SHOWN" -eq 1 ]]; then return; fi
+    if isTrue "$TITLE_SHOWN"; then return; fi
     TITLE_SHOWN=1
 
-    if [[ -t 1 ]]; then
-        echo
-        echo -e "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" \
-                "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
-    else
-        echo
-        echo -e "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" \
-                "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
+    # Ausgabe im Terminal
+    if isFalse "$OPT_QUIET"; then
+        printf "%s\n" "" > /dev/tty
+        printf "%b"   "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" > /dev/tty
+        printf "%b\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}" > /dev/tty
+        echo > /dev/tty
     fi
-    echo
+
+    # Ausgabe in Datei/Umleitung
+    if [[ ! -t 1 ]]; then
+        printf "%s\n" "" "===================================================================================="
+        printf "%s"   "${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·"
+        printf "%s\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten."
+        printf "%s\n" "===================================================================================="
+        echo
+    fi
 }
 
 
 ## Warnmeldung ausgeben
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showWarning() {
     ((COUNT_WRN+=1))
 
     # Alle Parameter als separate Zeilen ausgeben
-    echo -e "???? $1"
+    showTitle
+
+    # Ausgabe im Terminal
+    local line="$1"
     shift
 
-    for wrn_msg in "$@"; do
-        echo -e "  ?? $wrn_msg"
-    done
+    if isFalse "$OPT_QUIET"; then
+        printf "???? %s\n" "$line" > /dev/tty
+        printf "  ?? %s\n" "$@" > /dev/tty
+    fi
+
+    # Ausgabe in Datei/Umleitung
+    if [[ ! -t 1 ]]; then
+        printf "???? %s\n" "$line"
+        printf "  ?? %s\n" "$@"
+    fi
 }
 
 
@@ -415,7 +1196,7 @@ showSyntaxAndExit() {
     # optionale Fehlermeldungen ausgeben
     if [[ $# -gt 0 ]]; then
         showError 0 "$@"
-        echo
+        showMsg ""
     fi
 
     # Gültige Syntax ausgeben
@@ -424,6 +1205,52 @@ showSyntaxAndExit() {
             "        cdeploy remove --global|--local <package>"
 
     quit 1
+}
+
+
+## sudo-Login
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+sudoLogin() {
+    echo "   Für diese Aktion benötigen Sie Administratorrechte." > /dev/tty
+    if [[ ! -t 1 ]]; then
+        echo -n "   [sudo Kennwortabfrage]"
+    fi
+
+    # Trap, damit bei Strg-C sauber aufgeräumt wird (Kennwort-Variable löschen) und das
+    # Skript mit einem Fehlercode (1) zurückkommt.
+    local pw
+    trap '[[ ! -t 1 ]] && echo > /dev/tty; showMsg "" "" "   (Abbruch durch den Benutzer)" ""; pw=""; unset pw; trap - INT; quit 1' INT
+
+    while true; do
+        # Passwort ohne Echo einlesen; bei Strg-C oder EOF liefert read !=0
+        if ! read -rsp "   Bitte geben Sie ihr Kennwort ein (Strg-C zum Abbrechen): " pw; then
+            if isTrue "$OPT_QUIET"; then echo > /dev/tty; fi
+            showMsg "" "" "   (Abbruch durch den Benutzer)" ""
+            quit 1
+        fi
+
+        # Passwort an sudo übergeben; Ausgaben unterdrücken
+        if printf '%s\n' "$pw" | sudo -S -v >/dev/null 2>&1; then
+            sleep 0.05
+            # Erfolg. Passwort löschen und Funktion mit Erfolg beenden
+            pw=""; unset pw; trap - INT
+            if isTrue "$OPT_QUIET"; then echo > /dev/tty; fi
+            showMsg "" "" ""
+            USE_SUDO="sudo"
+            return 0
+        else
+            # Fehler: Passwort löschen, Hinweis ausgeben, Schleife wiederholen
+            pw=""; unset pw
+            echo "" > /dev/tty
+            echo "" > /dev/tty
+            echo "   Falsches Kennwort, bitte versuchen Sie es nocheinmal. " > /dev/tty
+            # Schleife läuft weiter
+        fi
+    done
+
+    # Irgendetwas ist schiefgelaufen, an diese Stelle sollten wir nicht kommen!
+    showMsg ""
+    showError 1 "Ein unbekannter Fehler ist aufgetreten. cdeploy wird beendet."
 }
 
 
@@ -448,6 +1275,20 @@ toLowercase() {
 toUppercase() {
     local text="$1"
     echo "${text^^}"
+}
+
+
+## Plausibilitätsprüfung für (Pfad-)Variablen (leer oder ungültige Zeichen)
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+validateVar() {
+    local varname="$1"
+    local value="${!varname}"
+    if [[ -z "$value" ]]; then
+        showError 1 "Variable $varname ist leer."
+    fi
+    if [[ "$value" =~ [^a-zA-Z0-9._/-] ]]; then
+        showError 1 "Variable $varname enthält ungültige Zeichen." "$value"
+    fi
 }
 
 
