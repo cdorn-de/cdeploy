@@ -79,6 +79,9 @@ readonly _SCRIPT_VERS="1.0"
 # Skript-Konfiguration
 PROJECT_NAME="tools"
 PROJECT_VERSION=""
+PROJECT_CREATOR=""
+PROJECT_URL=""
+PROJECT_COPYRIGHT=""
 
 ACTION=""
 BASE_GLOBAL="/usr/local"
@@ -91,6 +94,7 @@ MANIFEST_FILE=""
 OPT_DRYRUN=0
 OPT_QUIET=0
 OPT_SCOPE=""
+OPT_VERBOSE=0
 PACKAGE=""
 SHOW_SYNOPSIS=0
 TARGET_BASE=""
@@ -101,6 +105,7 @@ TARGET_MAN=""
 TARGET_MANIFEST=""
 TARGET_SYM=""
 TITLE_SHOWN=0
+USE_PAGER=0
 USE_SUDO=""
 
 # Formatierungen
@@ -130,6 +135,8 @@ main() {
     case "$ACTION" in
         help)
             cdeployShowHelpAndExit ;;
+        info)
+            cdeployShowPackageInfo ;;
         install)
             cdeployInstall ;;
         remove)
@@ -153,6 +160,7 @@ parseParameters() {
     # Syntax anzeigen und abbrechen, wenn eine unbekannte Aktion gefunden wird
     case "$1" in
         help|-h|--help) ACTION="help" ;;
+        info)           ACTION="info" ;;
         install)        ACTION="install" ;;
         remove)         ACTION="remove" ;;
         *)              showSyntaxAndExit "Unbekannte Aktion: $1" ;;
@@ -177,10 +185,11 @@ parseParameters() {
         showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
     fi
 
-
-    # Installationspaket auslesen; das muss immer der letzte Parameter sein
-    PACKAGE="${!#}"
-    set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+    # Aktionen, die als letzten Parameter ein Installationspaket erwarten
+    if [[ "$ACTION" =~ ^(info|install)$ ]]; then
+        PACKAGE="${!#}"
+        set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+    fi
 
 
     # Optionen auslesen
@@ -188,6 +197,7 @@ parseParameters() {
         case "$arg" in
             # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
             # die haben wir eingangs bereits ermittelt
+            info| \
             install| \
             remove)
                 showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
@@ -204,6 +214,9 @@ parseParameters() {
             --local)
                 assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
+            --verbose)
+                assertIsFalse "verbose" $OPT_VERBOSE
+                OPT_VERBOSE=1 ;;
             # Alle anderen: Syntax anzeigen und abbrechen
             *)  showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
         esac
@@ -215,8 +228,8 @@ parseParameters() {
         showError 1 "Das angegebene Installationspaket existiert nicht."
     fi
 
-    if [[ -z "$OPT_SCOPE" ]]; then
-        showSyntaxAndExit "Es wurde kein Zielbereich angegeben"
+    if [[ "$ACTION" =~ ^(install|remove)$ && -z "$OPT_SCOPE" ]]; then
+        showSyntaxError "Es wurde kein Zielbereich angegeben."
     fi
 }
 
@@ -228,6 +241,7 @@ parseParameters() {
 ## ========================================================================================
 
 
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ## Installiert ein Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
@@ -319,6 +333,7 @@ cdeployInstall() {
 }
 
 
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ## Entfernt ein installiertes Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployRemove() {
@@ -344,11 +359,148 @@ cdeployRemove() {
 }
 
 
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ## Hilfeseite (Manpage) anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployShowHelpAndExit() {
     showMsg "Hier steht die Hilfeseite."
     exit 0
+}
+
+
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+## Paketinformation anzeigen
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdeployShowPackageInfo() {
+    # Wenn die Ausgabe in tty erfolgen soll, muss durch die Verwendung eines Pager
+    # (less/more), die Ausgabe in tty erzwungen werden. Ergo: USE_PAGER=1
+    if [ -t 1 ]; then
+        USE_PAGER=1
+    fi
+
+
+    local output
+    output="$(
+    local total=0
+    local _lw=80;  readonly _lw
+
+    # Paket und Zielverzeichnisse prüfen
+    local filepath;  filepath=$(absPath "$PACKAGE")
+    checkPackageStructure "$filepath"
+    loadConfigFile
+
+    # Titel und Beschreibung der Aktion ausgeben
+    showTitle
+
+    showMsg "Informationen zu Paket aus Quelle" \
+            "$filepath" \
+            "" \
+            ""
+
+    # Prüfen ob das Paket existiert
+    if [[ ! -e "$filepath" ]]; then
+        showError 1 "Das angegebene Paket wurde nicht gefunden."
+    fi
+
+# ääää
+    local hash;  hash="$(getFileHash "$filepath")"
+    case $? in
+        1) hash="${hash} (Paket nicht gefunden)" ;;
+        2) hash="${hash} (kein SHA-Tool gefunden)" ;;
+    esac
+
+    showMsg "Paketinformation" \
+        "================" \
+        "Name.................: ${PROJECT_NAME:-./.}" \
+        "Version..............: ${PROJECT_VERSION:-./.}" \
+        "Ersteller............: ${PROJECT_CREATOR:-./.}" \
+        "Quelle/URL...........: ${PROJECT_URL:-./.}" \
+        "Hash.................: $hash"
+        "Copyright............: ${PROJECT_COPYRIGHT:-./.}"
+
+    showMsg "" \
+        "Installationspfade:" \
+        "    Lokal............: ${BASE_LOCAL:-./.}" \
+        "    Global...........: ${BASE_GLOBAL:-./.}"
+
+    showMsg "" \
+        "" \
+        "Beschreibung:" \
+        "${PROJECT_DESC:-./.}" | fold -s -w "$_lw"
+
+
+    # An dieser Stelle das Skript beenden, wenn die --verbose Option nicht gesetzt ist
+    if isFalse "$OPT_VERBOSE"; then exit 0; fi
+
+
+
+    showMsg "" \
+        "" \
+        "Dateien im Paket" \
+        "================"
+
+    # ./bin, ./lib, ./etc, ./man
+    for dir in bin lib etc man; do
+        if [[ -d "${PACKAGE}/$dir" ]]; then
+            showMsg "./$dir"
+            while IFS= read -r f; do
+                showMsg "    $f"
+                ((total+=1))
+            done < <(ls -1 "${PACKAGE}/$dir")
+            showMsg ""
+        fi
+    done
+
+    # --- files ---
+    local files_dir="${PACKAGE}/files"
+    local files_conf="$files_dir/files.conf"
+
+    if [[ -d "$files_dir" && -f "$files_conf" ]]; then
+        showMsg "files/  (gruppiert nach Ziel)"
+
+        # Kommentare und Leerzeilen überspringen, sortieren, zählen
+        mapfile -t lines < <(grep -Ev '^\s*#|^\s*$' "$files_conf" | sort -k2,2 -k1,1)
+
+        local last_target=""
+        local filecount=0
+
+        for line in "${lines[@]}"; do
+            src=${line%%[[:space:]]*}
+            target=${line#*[[:space:]]}
+
+    # Verzeichnisanteil extrahieren:
+    if [[ "$target" == */ ]]; then
+        # endet auf / -> ist ein Verzeichnis
+        target="${target%/}"
+    elif [[ "$target" == *"/"* ]]; then
+        # enthält / -> alles vor letztem /
+        src="${target##*/}"
+        target="${target%/*}"
+    else
+        # kein / -> aktuelles Verzeichnis
+        target="."
+    fi
+
+            if [[ "$target" != "$last_target" ]]; then
+                showMsg "    $target/"
+                last_target=$target
+            fi
+            showMsg "        $src"
+            ((filecount+=1))
+        done
+
+        total=$(( total + filecount ))
+        showMsg ""
+    fi
+
+    showMsg "" "Es befinden sich insgesamt $total Datei(en) im Paket."
+    )" #| usePager
+
+
+    # Ausgabe per 'usePager' automatisch über less/more/cat. So kann die Information
+    # im Terminalfenster komfortabel gelesen werden, aber auch die Umleitung in eine
+    # Datei ist möglich: cdeploy info {package} > datei.txt
+    echo "$output" | usePager
 }
 
 
@@ -745,6 +897,43 @@ freeCopy() {
 }
 
 
+## Liefere den sha256 Hash für eine Datei/ein Verzeichnis
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getFileHash() {
+    local filepath="$1"
+
+    # Datei/Verzeichnis nicht gefunden oder nicht übergeben
+    #if [ ! -f "$filepath" ]; then
+    if [ ! -f "$filepath" ] && [ ! -d "$filepath" ]; then
+        echo "n/a"
+        return 1
+    fi
+
+    # sha256-Hash berechnen
+    if command -v sha256sum >/dev/null 2>&1; then
+        if [ -d "$filepath" ]; then
+            ( cd "$filepath" && find . -type f -exec sha256sum {} + | sort | \
+                    sha256sum | awk '{print $1}' )
+        else
+            sha256sum "$filepath" | awk '{print $1}'
+        fi
+        return 0
+    elif command -v shasum >/dev/null 2>&1; then
+        if [ -d "$filepath" ]; then
+            ( cd "$filepath" && find . -type f -exec shasum -a 256 {} + | sort | \
+                    shasum -a 256 | awk '{print $1}' )
+            else
+                shasum -a 256 "$filepath" | awk '{print $1}'
+            fi
+        return 0
+    fi
+
+    # kein SHA-Tool verfügbar
+    echo "n/a"
+    return 2
+}
+
+
 ## Zielverzeichnisse für (De-)Installation ermitteln und an die
 ## globalen Variablen übertragen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -935,17 +1124,10 @@ manifestAppend() {
     [ -f "$filepath" ] || return 1
 
     # SHA256 Hash ermitteln
-    local hash size mtime
-
-    if command -v sha256sum >/dev/null 2>&1; then
-        hash=$(sha256sum "$filepath" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        hash=$(shasum -a 256 "$filepath" | awk '{print $1}')
-    else
-        hash="n/a"
-    fi
+    local hash;  hash=getFileHash "$filepath"
 
     # Dateigröße und mtime ermitteln
+    local size mtime
     if stat --version >/dev/null 2>&1; then
         # GNU stat (Linux)
         size=$(stat -c%s "$filepath")
@@ -1017,12 +1199,15 @@ quit() {
     fi
 
     # Darstellung beenden
-    if isFalse "$OPT_QUIET"; then
+    if isTrue "$USE_PAGER"; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo
+    elif isFalse "$OPT_QUIET"; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
         echo "" > /dev/tty
     fi
 
-    if [[ ! -t 1 ]]; then
+    if [[ ! -t 1 ]] && isFalse "$USE_PAGER"; then
         echo "===================================================================================="
     fi
 
@@ -1102,16 +1287,16 @@ showError() {
     local line="$1"
     shift
 
-    if isFalse "$OPT_QUIET"; then
+    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
         printf "!!!! %s\n" "$line" > /dev/tty
         printf "  !! %s\n" "$@" > /dev/tty
     fi
 
     # Ausgabe in Datei/Umleitung
-    if [[ ! -t 1 ]]; then
+    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
         printf "!!!! %s\n" "$line"
         printf "  !! %s\n" "$@"
-    fi
+    #fi
 
 
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
@@ -1127,14 +1312,14 @@ showError() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showMsg() {
     # Ausgabe im Terminal
-    if isFalse "$OPT_QUIET"; then
+    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
         printf "%s\n" "$@" > /dev/tty
     fi
 
     # Ausgabe in Datei/Umleitung
-    if [[ ! -t 1 ]]; then
+    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
         printf "%s\n" "$@"
-    fi
+    #fi
 }
 
 
@@ -1145,7 +1330,12 @@ showTitle() {
     TITLE_SHOWN=1
 
     # Ausgabe im Terminal
-    if isFalse "$OPT_QUIET"; then
+    if isTrue "$USE_PAGER"; then
+        printf "%s\n" ""
+        printf "%b"   "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·"
+        printf "%b\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
+        echo
+    elif isFalse "$OPT_QUIET"; then
         printf "%s\n" "" > /dev/tty
         printf "%b"   "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" > /dev/tty
         printf "%b\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}" > /dev/tty
@@ -1153,7 +1343,7 @@ showTitle() {
     fi
 
     # Ausgabe in Datei/Umleitung
-    if [[ ! -t 1 ]]; then
+    if [[ ! -t 1 ]] && isFalse "$USE_PAGER"; then
         printf "%s\n" "" "===================================================================================="
         printf "%s"   "${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·"
         printf "%s\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten."
@@ -1175,16 +1365,16 @@ showWarning() {
     local line="$1"
     shift
 
-    if isFalse "$OPT_QUIET"; then
+    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
         printf "???? %s\n" "$line" > /dev/tty
         printf "  ?? %s\n" "$@" > /dev/tty
     fi
 
     # Ausgabe in Datei/Umleitung
-    if [[ ! -t 1 ]]; then
+    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
         printf "???? %s\n" "$line"
         printf "  ?? %s\n" "$@"
-    fi
+    #fi
 }
 
 
@@ -1275,6 +1465,26 @@ toLowercase() {
 toUppercase() {
     local text="$1"
     echo "${text^^}"
+}
+
+
+## Gibt Eingabe durch less, more oder cat aus – je nach Umgebung
+## ---------------------------------------------------------------------
+usePager() {
+    #if [[ -t 1 ]]; then
+    if isTrue "$USE_PAGER"; then
+        # interaktiv: Ausgabe an Terminal
+        if command -v less >/dev/null 2>&1; then
+            less -rXF #< /dev/tty
+        elif command -v more >/dev/null 2>&1; then
+            more #< /dev/tty
+        else
+            cat #< /dev/tty
+        fi
+    else
+        # Ausgabe wurde umgeleitet (z. B. > datei.txt)
+        cat
+    fi
 }
 
 
