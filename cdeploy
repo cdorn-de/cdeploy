@@ -654,6 +654,7 @@ ensureLocalPath() {
             PATH)
                 echo "export $varname=\"\$$varname:$target\"" >> "$profile" ;;
             MANPATH)
+# Zur Erinnerung: muss linksbündig stehen, weil Here-Doc
 cat <<EOF >> ~/.profile
 if [[ -z "\$MANPATH" ]]; then
     MANPATH="\$(man --path 2>/dev/null || echo \"$TARGET_MAN\")"
