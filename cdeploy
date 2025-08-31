@@ -95,6 +95,7 @@ OPT_DRYRUN=0
 OPT_QUIET=0
 OPT_SCOPE=""
 OPT_VERBOSE=0
+OUTPUT_FORMATTED=1
 PACKAGE=""
 SHOW_SYNOPSIS=0
 TARGET_BASE=""
@@ -104,7 +105,6 @@ TARGET_LIB=""
 TARGET_MAN=""
 TARGET_MANIFEST=""
 TARGET_SYM=""
-TITLE_SHOWN=0
 USE_PAGER=0
 USE_SUDO=""
 
@@ -214,7 +214,7 @@ parseParameters() {
             --local)
                 assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
-            --verbose)
+            --verbose|-v)
                 assertIsFalse "verbose" $OPT_VERBOSE
                 OPT_VERBOSE=1 ;;
             # Alle anderen: Syntax anzeigen und abbrechen
@@ -372,136 +372,23 @@ cdeployShowHelpAndExit() {
 ## Paketinformation anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployShowPackageInfo() {
-    # Wenn die Ausgabe in tty erfolgen soll, muss durch die Verwendung eines Pager
-    # (less/more), die Ausgabe in tty erzwungen werden. Ergo: USE_PAGER=1
-    if [ -t 1 ]; then
+    # Ausgabe für Anzeige mit Pager (less/more) im Terminalfenster
+    if isFalse "$OPT_QUIET"; then
+        OUTPUT_FORMATTED=1
         USE_PAGER=1
+        info="$(makePackageInfo)"
+        echo "$info" | usePager
     fi
 
-
-    local output
-    output="$(
-    local total=0
-    local _lw=80;  readonly _lw
-
-    # Paket und Zielverzeichnisse prüfen
-    local filepath;  filepath=$(absPath "$PACKAGE")
-    checkPackageStructure "$filepath"
-    loadConfigFile
-
-    # Titel und Beschreibung der Aktion ausgeben
-    showTitle
-
-    showMsg "Informationen zu Paket aus Quelle" \
-            "$filepath" \
-            "" \
-            ""
-
-    # Prüfen ob das Paket existiert
-    if [[ ! -e "$filepath" ]]; then
-        showError 1 "Das angegebene Paket wurde nicht gefunden."
+    # Ausgabe für Umleitung in Datei
+    if [ ! -t 1 ]; then
+        OUTPUT_FORMATTED=0
+        USE_PAGER=0
+        info="$(makePackageInfo)"
+        echo "$info"
     fi
 
-    # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
-    #                 Befehl gleichen Namens! Daher 'hsh' verwenden.
-    local hsh;  hsh="$(getFileHash "$filepath")"
-    case $? in
-        1) hsh="${hsh} (Paket nicht gefunden)" ;;
-        2) hsh="${hsh} (kein SHA-Tool gefunden)" ;;
-    esac
-
-    showMsg "Paketinformation" \
-        "================" \
-        "Name.................: ${PROJECT_NAME:-./.}" \
-        "Version..............: ${PROJECT_VERSION:-./.}" \
-        "Ersteller............: ${PROJECT_CREATOR:-./.}" \
-        "Quelle/URL...........: ${PROJECT_URL:-./.}" \
-        "Hash.................: $hsh" \
-        "Copyright............: ${PROJECT_COPYRIGHT:-./.}"
-
-    showMsg "" \
-        "Installationspfade:" \
-        "    Lokal............: ${BASE_LOCAL:-./.}" \
-        "    Global...........: ${BASE_GLOBAL:-./.}"
-
-    showMsg "" \
-        "" \
-        "Beschreibung:" \
-        "${PROJECT_DESC:-./.}" | fold -s -w "$_lw"
-
-
-    # An dieser Stelle das Skript beenden, wenn die --verbose Option nicht gesetzt ist
-    if isFalse "$OPT_VERBOSE"; then exit 0; fi
-
-
-
-    showMsg "" \
-        "" \
-        "Dateien im Paket" \
-        "================"
-
-    # ./bin, ./lib, ./etc, ./man
-    for dir in bin lib etc man; do
-        if [[ -d "${PACKAGE}/$dir" ]]; then
-            showMsg "./$dir"
-            while IFS= read -r f; do
-                showMsg "    $f"
-                ((total+=1))
-            done < <(ls -1 "${PACKAGE}/$dir")
-            showMsg ""
-        fi
-    done
-
-    # --- files ---
-    local files_dir="${PACKAGE}/files"
-    local files_conf="$files_dir/files.conf"
-
-    if [[ -d "$files_dir" && -f "$files_conf" ]]; then
-        showMsg "files/  (gruppiert nach Ziel)"
-
-        # Kommentare und Leerzeilen überspringen, sortieren, zählen
-        mapfile -t lines < <(grep -Ev '^\s*#|^\s*$' "$files_conf" | sort -k2,2 -k1,1)
-
-        local last_target=""
-        local filecount=0
-
-        for line in "${lines[@]}"; do
-            src=${line%%[[:space:]]*}
-            target=${line#*[[:space:]]}
-
-    # Verzeichnisanteil extrahieren:
-    if [[ "$target" == */ ]]; then
-        # endet auf / -> ist ein Verzeichnis
-        target="${target%/}"
-    elif [[ "$target" == *"/"* ]]; then
-        # enthält / -> alles vor letztem /
-        src="${target##*/}"
-        target="${target%/*}"
-    else
-        # kein / -> aktuelles Verzeichnis
-        target="."
-    fi
-
-            if [[ "$target" != "$last_target" ]]; then
-                showMsg "    $target/"
-                last_target=$target
-            fi
-            showMsg "        $src"
-            ((filecount+=1))
-        done
-
-        total=$(( total + filecount ))
-        showMsg ""
-    fi
-
-    showMsg "" "Es befinden sich insgesamt $total Datei(en) im Paket."
-    )" #| usePager
-
-
-    # Ausgabe per 'usePager' automatisch über less/more/cat. So kann die Information
-    # im Terminalfenster komfortabel gelesen werden, aber auch die Umleitung in eine
-    # Datei ist möglich: cdeploy info {package} > datei.txt
-    echo "$output" | usePager
+    quit 0
 }
 
 
@@ -1061,6 +948,18 @@ isFalse() {
 }
 
 
+## Prüft ob stdout eine Pipe ist (0) oder nicht (1)
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+isPipedOutput() {
+    [ -e /dev/stdout ] && [ -p /dev/stdout ]
+#    if [ -e /dev/stdout ] && [ -p /dev/stdout ]; then
+#        return 0
+#    else
+#        return 1
+#    fi
+}
+
+
 ## Behandelt die übergebene Variable als Boolean; kehrt den Rückgabewert von 'isFalse' um.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 isTrue() {
@@ -1080,6 +979,136 @@ loadConfigFile() {
         # shellcheck disable=SC1090
         source "$config_file"
     fi
+}
+
+
+## Erstellt die Paketinformationen zur Anzeige im Terminal und/oder Ausgabe in Datei
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+makePackageInfo() {
+    local output
+
+    output="$(
+        local _lw=80;  readonly _lw
+
+        # Paket und Zielverzeichnisse prüfen
+        local filepath;  filepath=$(absPath "$PACKAGE")
+        checkPackageStructure "$filepath"
+        loadConfigFile
+
+        # Titel und Beschreibung der Aktion ausgeben
+        showTitle
+
+        showMsg "Informationen zu Paket aus Quelle" \
+                "$filepath" \
+                "" \
+                ""
+
+        # Prüfen ob das Paket existiert
+        if [[ ! -e "$filepath" ]]; then
+            showError 1 "Das angegebene Paket wurde nicht gefunden."
+            return 0
+        fi
+
+        # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
+        #                 Befehl gleichen Namens! Daher 'hsh' verwenden.
+        local hsh;  hsh="$(getFileHash "$filepath")"
+        case $? in
+            1) hsh="${hsh} (Paket nicht gefunden)" ;;
+            2) hsh="${hsh} (kein SHA-Tool gefunden)" ;;
+        esac
+
+        showMsg "Paketinformation" \
+            "================" \
+            "Name.................: ${PROJECT_NAME:-./.}" \
+            "Version..............: ${PROJECT_VERSION:-./.}" \
+            "Ersteller............: ${PROJECT_CREATOR:-./.}" \
+            "Quelle/URL...........: ${PROJECT_URL:-./.}" \
+            "Hash.................: $hsh" \
+            "Copyright............: ${PROJECT_COPYRIGHT:-./.}"
+
+        showMsg "" \
+            "Installationspfade:" \
+            "    Lokal............: ${BASE_LOCAL:-./.}" \
+            "    Global...........: ${BASE_GLOBAL:-./.}"
+
+        showMsg "" \
+            "" \
+            "Beschreibung:" \
+            "${PROJECT_DESC:-./.}" | fold -s -w "$_lw"
+
+
+        # Hier aufhören für die einfache Ausgabe
+        if isFalse "$OPT_VERBOSE"; then return 0; fi
+
+
+        # Erweiterte Ausgabe inkl. aller Dateien
+        local total=0
+
+        showMsg "" \
+            "" \
+            "Dateien im Paket" \
+            "================"
+
+        # ./bin, ./lib, ./etc, ./man
+        for dir in bin lib etc man; do
+            if [[ -d "${PACKAGE}/$dir" ]]; then
+                showMsg "./$dir"
+                while IFS= read -r f; do
+                    showMsg "    $f"
+                    ((total+=1))
+                done < <(ls -1 "${PACKAGE}/$dir")
+                showMsg ""
+            fi
+        done
+
+        # --- files ---
+        local files_dir="${PACKAGE}/files"
+        local files_conf="$files_dir/files.conf"
+
+        if [[ -d "$files_dir" && -f "$files_conf" ]]; then
+            showMsg "files/  (gruppiert nach Ziel)"
+
+            # Kommentare und Leerzeilen überspringen, sortieren, zählen
+            mapfile -t lines < <(grep -Ev '^\s*#|^\s*$' "$files_conf" | sort -k2,2 -k1,1)
+
+            local last_target=""
+            local filecount=0
+
+            for line in "${lines[@]}"; do
+                src=${line%%[[:space:]]*}
+                target=${line#*[[:space:]]}
+
+                # Verzeichnisanteil extrahieren:
+                if [[ "$target" == */ ]]; then
+                    # endet auf / -> ist ein Verzeichnis
+                    target="${target%/}"
+                elif [[ "$target" == *"/"* ]]; then
+                    # enthält / -> alles vor letztem /
+                    src="${target##*/}"
+                    target="${target%/*}"
+                else
+                    # kein / -> aktuelles Verzeichnis
+                    target="."
+                fi
+
+                if [[ "$target" != "$last_target" ]]; then
+                    showMsg "    $target/"
+                    last_target=$target
+                fi
+                showMsg "        $src"
+                ((filecount+=1))
+            done
+
+            total=$(( total + filecount ))
+            showMsg ""
+        fi
+
+        showMsg "" "Es befinden sich insgesamt $total Datei(en) im Paket."
+        )"
+
+
+    # Die erstellten Informationen zurückgeben
+    echo "$output"
 }
 
 
@@ -1200,17 +1229,7 @@ quit() {
     fi
 
     # Darstellung beenden
-    if isTrue "$USE_PAGER"; then
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo
-    elif isFalse "$OPT_QUIET"; then
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-        echo "" > /dev/tty
-    fi
-
-    if [[ ! -t 1 ]] && isFalse "$USE_PAGER"; then
-        echo "===================================================================================="
-    fi
+    showBottomLine
 
     # Skript mit übergebenen Returncode abschließen
     exit "$1"
@@ -1271,6 +1290,27 @@ safeRun() {
 }
 
 
+## Gbit eine Abschlusslinie aus, die das Ende der Skriptausgabe markiert
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+showBottomLine() {
+    if isTrue "${_BOTTOM_LINE_SHOWN:=0}"; then return; fi
+    declare -gr _BOTTOM_LINE_SHOWN=1
+    
+    # Ausgabe im Terminalfenster
+    if isFalse $OPT_QUIET; then
+        {
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo
+        } > /dev/tty
+    fi
+
+    # Ausgabe für Umleitung in Datei
+    if [ ! -t 1 ]; then
+        echo "===================================================================================="
+    fi
+}
+
+
 ## Fehlermeldung ausgeben; Skript beenden, wenn Fehlercode <> 0
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showError() {
@@ -1288,22 +1328,14 @@ showError() {
     local line="$1"
     shift
 
-    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
-        printf "!!!! %s\n" "$line" > /dev/tty
-        printf "  !! %s\n" "$@" > /dev/tty
-    fi
-
     # Ausgabe in Datei/Umleitung
-    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
-        printf "!!!! %s\n" "$line"
-        printf "  !! %s\n" "$@"
-    #fi
+    printf "!!!! %s\n" "$line"
+    printf "  !! %s\n" "$@"
 
 
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
     # in jedem anderen Fall einfach den Fehlercode zurückgeben
-    if [[ "$err_code" -ne 0 ]]; then
-        if isFalse "$OPT_QUIET"; then echo > /dev/tty; fi
+    if [ "$err_code" -ne 0 ] && [ "${BASH_SUBSHELL:=0}" -eq 0 ]; then
         quit "$err_code"
     fi
 }
@@ -1312,44 +1344,28 @@ showError() {
 ## Eine Meldung ausgeben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showMsg() {
-    # Ausgabe im Terminal
-    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
-        printf "%s\n" "$@" > /dev/tty
-    fi
-
-    # Ausgabe in Datei/Umleitung
-    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
-        printf "%s\n" "$@"
-    #fi
+    printf "%b\n" "$@"
 }
 
 
 ## Titelzeile anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showTitle() {
-    if isTrue "$TITLE_SHOWN"; then return; fi
-    TITLE_SHOWN=1
+    if isTrue "${_TITLE_SHOWN:=0}"; then return; fi
+    declare -gr _TITLE_SHOWN=1
 
-    # Ausgabe im Terminal
-    if isTrue "$USE_PAGER"; then
-        printf "%s\n" ""
-        printf "%b"   "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·"
-        printf "%b\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}"
-        echo
-    elif isFalse "$OPT_QUIET"; then
-        printf "%s\n" "" > /dev/tty
-        printf "%b"   "${_INVERT} ${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·" > /dev/tty
-        printf "%b\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. ${_RESET}" > /dev/tty
-        echo > /dev/tty
-    fi
+    local info="${_SCRIPT_NAME} Version ${_SCRIPT_VERS} · Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. "
 
-    # Ausgabe in Datei/Umleitung
-    if [[ ! -t 1 ]] && isFalse "$USE_PAGER"; then
-        printf "%s\n" "" "===================================================================================="
-        printf "%s"   "${_SCRIPT_NAME} Version ${_SCRIPT_VERS} ·"
-        printf "%s\n" "Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten."
-        printf "%s\n" "===================================================================================="
-        echo
+    if isTrue "$OUTPUT_FORMATTED"; then
+        showMsg "" \
+                "${_INVERT} ${info} ${_RESET}" \
+                ""
+    else
+        showMsg "" \
+                "====================================================================================" \
+                "${info}" \
+                "====================================================================================" \
+                ""
     fi
 }
 
@@ -1366,16 +1382,8 @@ showWarning() {
     local line="$1"
     shift
 
-    if isFalse "$OPT_QUIET" && isFalse "$USE_PAGER"; then
-        printf "???? %s\n" "$line" > /dev/tty
-        printf "  ?? %s\n" "$@" > /dev/tty
-    fi
-
-    # Ausgabe in Datei/Umleitung
-    #if [[ ! -t 1 ]] || isTrue "$USE_PAGER"; then
-        printf "???? %s\n" "$line"
-        printf "  ?? %s\n" "$@"
-    #fi
+    printf "???? %s\n" "$line"
+    printf "  ?? %s\n" "$@"
 }
 
 
@@ -1476,11 +1484,11 @@ usePager() {
     if isTrue "$USE_PAGER"; then
         # interaktiv: Ausgabe an Terminal
         if command -v less >/dev/null 2>&1; then
-            less -rXF #< /dev/tty
+            less -rXF > /dev/tty
         elif command -v more >/dev/null 2>&1; then
-            more #< /dev/tty
+            more > /dev/tty
         else
-            cat #< /dev/tty
+            cat > /dev/tty
         fi
     else
         # Ausgabe wurde umgeleitet (z. B. > datei.txt)
