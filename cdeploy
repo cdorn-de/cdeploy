@@ -205,13 +205,13 @@ parseParameters() {
             --dry-run|-d)
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
-            --quiet)
+            --quiet|-q)
                 assertIsFalse "quiet" $OPT_QUIET
                 OPT_QUIET=1 ;;
-            --global)
+            --global|-g)
                 assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="global" ;;
-            --local)
+            --local|-l)
                 assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
             --verbose|-v)
