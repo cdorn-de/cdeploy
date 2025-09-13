@@ -82,6 +82,7 @@ PROJECT_VERSION=""
 PROJECT_CREATOR=""
 PROJECT_URL=""
 PROJECT_COPYRIGHT=""
+PROJECT_DESCRIPTION=""
 
 ACTION=""
 BASE_GLOBAL="/usr/local"
@@ -95,6 +96,7 @@ OPT_DRYRUN=0
 OPT_QUIET=0
 OPT_SCOPE=""
 OPT_VERBOSE=0
+OUTPUT=""
 OUTPUT_FORMATTED=1
 PACKAGE=""
 SHOW_SYNOPSIS=0
@@ -133,6 +135,8 @@ main() {
 
     # Aktion ausführen
     case "$ACTION" in
+        create)
+            cdeployCreate ;;
         help)
             cdeployShowHelpAndExit ;;
         info)
@@ -163,6 +167,7 @@ parseParameters() {
     # Aktion auslesen; diese muss immer als erster Parameter gesetzt werden;
     # Syntax anzeigen und abbrechen, wenn eine unbekannte Aktion gefunden wird
     case "$1" in
+        create)                 ACTION="create" ;;
         help|-h|--help)         ACTION="help" ;;
         info)                   ACTION="info" ;;
         install)                ACTION="install" ;;
@@ -197,20 +202,36 @@ parseParameters() {
         set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
     fi
 
+    # Aktionen, die als letzten Parameter einen Ausgabepfad erwarten
+    if [[ "$ACTION" =~ ^(create)$ ]]; then
+        OUTPUT="${!#}"
+        set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+    fi
+
 
     # Optionen auslesen
     for arg in "$@"; do
         case "$arg" in
             # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
             # die haben wir eingangs bereits ermittelt
+            create| \
             help|-p|--help| \
             info| \
             install| \
             list|ls| \
             remove| \
-            version|-V|--version)
+            version|-V)
                 showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
             # Optionen
+            --copyright=*)
+                assertIsEmpty "copyright" "$PROJECT_COPYRIGHT"
+                PROJECT_COPYRIGHT="${arg#*=}" ;;
+            --creator=*)
+                assertIsEmpty "anbieter" "$PROJECT_CREATOR"
+                PROJECT_CREATOR="${arg#*=}" ;;
+            --description=*)
+                assertIsEmpty "beschreibung" "$PROJECT_DESCRIPTION"
+                PROJECT_DESCRIPTION="${arg#*=}" ;;
             --dry-run|-d)
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
@@ -223,13 +244,24 @@ parseParameters() {
             --local|-l)
                 assertIsEmpty "zielbereich" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
+            --name=*)
+                PROJECT_NAME="${arg#*=}" ;;
+            --url=*)
+                assertIsEmpty "url" "$PROJECT_URL"
+                PROJECT_URL="${arg#*=}" ;;
             --verbose|-v)
                 assertIsFalse "verbose" $OPT_VERBOSE
                 OPT_VERBOSE=1 ;;
+            --version=*)
+                assertIsEmpty "projektversion" "$PROJECT_VERSION"
+                PROJECT_VERSION="${arg#*=}" ;;
             # Alle anderen: Syntax anzeigen und abbrechen
             *)  showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
         esac
     done
+
+
+## TODO Parameter auf Vollständigkeit prüfen
 
 
     # Auf Vollständigkeit prüfen
@@ -248,6 +280,91 @@ parseParameters() {
 ## ========================================================================================
 ## Dispatcher-Methoden
 ## ========================================================================================
+
+
+## ---------------------------------------------------------------------
+## Ein leeres Installationspaket erstellen
+## ---------------------------------------------------------------------
+cdeployCreate() {
+    # Zusammenfassung der Aufgabe anzeigen
+    showTitle
+    showMsg "Erzeuge leeres Installationspaket in" \
+            "$(absPath "$OUTPUT")" \
+            ""
+
+    # Ausgabe prüfen
+    if [[ -e "$OUTPUT" ]]; then
+        showError 1 "Es gibt bereits ein Objekt mit diesem Namen."
+    fi
+
+    # Verzeichnisstruktur anlegen
+    mkdir -p "$OUTPUT"/{bin,lib,etc,man,files} || {
+        showError 1 "Das Verzeichnis konnte nicht angelegt werden."
+    }
+
+    # Leere Standard-Dateien erstellen
+    local out="${OUTPUT}/cdeploy.conf"
+    cat > "$out" <<EOF
+## ================================================================================
+## Config-Datei für das Installationsskript 'cdeploy'.
+## Verwenden Sie diese Datei um ihre Installationspakete anzupassen.
+## ================================================================================
+
+
+## ==========
+## Projektdaten
+## ==========
+
+## Projektname, wird u.a. zur Benennung des Zielordners verwendet.
+$(makeConfigLine "PROJECT_NAME" "$PROJECT_NAME")
+
+## Projektversion, wird für die Verwaltung der Installationen benötigt.
+$(makeConfigLine "PROJECT_VERSION" "$PROJECT_VERSION")
+
+## Ersteller
+$(makeConfigLine "PROJECT_CREATOR" "$PROJECT_CREATOR")
+
+## URL zur Webseite / zum Download
+$(makeConfigLine "PROJECT_URL" "$PROJECT_URL")
+
+## Copyright
+$(makeConfigLine "PROJECT_COPYRIGHT" "$PROJECT_COPYRIGHT")
+
+## Eine kurze Projektbeschreibung.
+$(makeConfigLine "PROJECT_DESCRIPTION" "$PROJECT_DESCRIPTION")
+
+
+## ==========
+## INSTALLATIONS-ZIELE
+## ==========
+
+## Intallation für alle Benutzer (Parameter 'global').
+#BASE_GLOBAL="/usr/local"
+
+## Installation für den ausführenden Benutzer (Parameter 'local').
+#BASE_LOCAL="$HOME/.local"
+EOF
+
+
+    out="${OUTPUT}/files/files.conf"
+    cat > "$out" <<'EOF'
+## Konfigurationsdatei für freies Kopieren von Dateien mit cdeploy.
+## Verzeichnisse können mit dieser Funktion nicht kopiert werden.
+##
+## Definieren Sie in jeder Zeile einen Kopiervorgang, Leerzeilen und
+## Kommentare ('#') werden ignoriert.
+## Format: <source_file_name> <target_path>
+##
+## Siehe 'cdeploy help' für mehr Informationen.
+
+# Beispiele:
+# foo.txt ~/Dokumente
+# bar.txt ~/Dokumente/
+# digest ~/Dokumente/foobar.txt
+EOF
+
+    showMsg "Das Paket wurde erfolgreich erstellt." ""
+}
 
 
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -1042,6 +1159,21 @@ loadConfigFile() {
 }
 
 
+## Erstellt einen Key-Value-Eintrag für eine Konfigurationsdatei.
+## Wenn die übergebene Variable leer ist, wird der Eintrag als Kommentar
+## angelegt, ansonsten als aktive Zeile.
+## ---------------------------------------------------------------------
+makeConfigLine() {
+    local varname="$1"
+    local value="$2"
+    if [[ -n "$value" ]]; then
+        echo "${varname}=\"${value}\""
+    else
+        echo "#${varname}=\"\""
+    fi
+}
+
+
 ## Erstellt die Paketinformationen zur Anzeige im Terminal und/oder Ausgabe in Datei
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makePackageInfo() {
@@ -1094,7 +1226,7 @@ makePackageInfo() {
         showMsg "" \
             "" \
             "Beschreibung:" \
-            "${PROJECT_DESC:-./.}" | fold -s -w "$_lw"
+            "${PROJECT_DESCRIPTION:-./.}" | fold -s -w "$_lw"
 
 
         # Hier aufhören für die einfache Ausgabe
@@ -1409,7 +1541,7 @@ safeRun() {
 showBottomLine() {
     if isTrue "${_BOTTOM_LINE_SHOWN:=0}"; then return; fi
     declare -gr _BOTTOM_LINE_SHOWN=1
-    
+
     # Ausgabe im Terminalfenster
     if isFalse $OPT_QUIET; then
         {
@@ -1435,16 +1567,18 @@ showError() {
     # auf die Haupt-Shell
     ((COUNT_ERR+=1))
 
-    # Alle übrigen Parameter als separate Zeilen ausgeben
-    showTitle
+    if isFalse $OPT_QUIET; then
+        # Alle übrigen Parameter als separate Zeilen ausgeben
+        showTitle
 
-    # Ausgabe im Terminal
-    local line="$1"
-    shift
+        # Ausgabe im Terminal
+        local line="$1"
+        shift
 
-    # Ausgabe in Datei/Umleitung
-    printf "!!!! %s\n" "$line"
-    printf "  !! %s\n" "$@"
+        # Ausgabe in Datei/Umleitung
+        printf "!!!! %s\n" "$line"
+        printf "  !! %s\n" "$@"
+    fi
 
 
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
@@ -1458,7 +1592,9 @@ showError() {
 ## Eine Meldung ausgeben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showMsg() {
-    printf "%b\n" "$@"
+    if isFalse $OPT_QUIET; then
+        printf "%b\n" "$@"
+    fi
 }
 
 
@@ -1489,15 +1625,17 @@ showTitle() {
 showWarning() {
     ((COUNT_WRN+=1))
 
-    # Alle Parameter als separate Zeilen ausgeben
-    showTitle
+    if isFalse $OPT_QUIET; then
+        # Alle Parameter als separate Zeilen ausgeben
+        showTitle
 
-    # Ausgabe im Terminal
-    local line="$1"
-    shift
+        # Ausgabe im Terminal
+        local line="$1"
+        shift
 
-    printf "???? %s\n" "$line"
-    printf "  ?? %s\n" "$@"
+        printf "???? %s\n" "$line"
+        printf "  ?? %s\n" "$@"
+    fi
 }
 
 
@@ -1514,7 +1652,8 @@ showSyntaxAndExit() {
 
     # Gültige Syntax ausgeben
     showMsg "Syntax: cdeploy help" \
-            "        cdeploy info [--verbose] [--quiet] <package>"
+            "        cdeploy create [opt...] <package>" \
+            "        cdeploy info [--verbose] [--quiet] <package>" \
             "        cdeploy install --global|--local <package>" \
             "        cdeploy remove --global|--local <package>" \
             "        cdeploy version"
