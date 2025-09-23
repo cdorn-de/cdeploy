@@ -265,7 +265,7 @@ parseParameters() {
             version|-V)
                 showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
             # Optionen
-            --compressed)
+            --compressed|-c)
                 assertIsFalse "compressed" "$OPT_COMPRESSED"
                 OPT_COMPRESSED=1 ;;
             --copyright=*)
