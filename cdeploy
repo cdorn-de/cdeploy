@@ -107,7 +107,8 @@ OPT_VERBOSE=0
 OUTPUT=""
 OUTPUT_FORMATTED=1
 PACKAGE=""
-PACKAGE_STR=""
+PACKAGE_SOURCE=""
+PACKAGE_INPUT=""
 SHOW_SYNOPSIS=0
 TARGET_BASE=""
 TARGET_BIN=""
@@ -116,7 +117,6 @@ TARGET_LIB=""
 TARGET_MAN=""
 TARGET_MANIFEST=""
 TARGET_SYM=""
-TEMP_FILE=""
 USE_PAGER=0
 USE_SUDO=""
 
@@ -214,7 +214,8 @@ parseParameters() {
     # Aktionen, die als letzten Parameter ein Installationspaket erwarten
     if [[ "$ACTION" =~ ^(info|install|pack)$ ]]; then
         PACKAGE="${!#}"
-        PACKAGE_STR="$PACKAGE"     # zur Anzeige für den Fall, dass $PACKAGE entpackt wird
+        PACKAGE_INPUT="$PACKAGE"   # zur Anzeige für den Fall, dass $PACKAGE entpackt wird
+        PACKAGE_SOURCE="$PACKAGE"  # zur Berechnung des Hash
         set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
 
         # Datei herunterladen, wenn $PACKAGE eine URL ist
@@ -223,19 +224,23 @@ parseParameters() {
         result="$(downloadIfURL "$PACKAGE")" || showError $? "$result"
         PACKAGE="$result"
 
-        # Datei extrahieren, wenn sie ein Archiv ist
+        # Datei extrahieren, wenn sie ein Archiv ist. Sicherstellen dass PACKAGE_SOURCE auf
+        # das Archiv verweist, und nicht auf das entpackte Paket. Diese Information wird
+        # zur Berechnung des Hash benötigt.
         result="$(extractPackage "$PACKAGE")" || showError $? "$result"
+        PACKAGE_SOURCE="$PACKAGE"
         PACKAGE="$result"
 
         # Pfad prüfen und zurückgeben
-        if [ "$PACKAGE" = "" ] || ! checkPackageStructure "$PACKAGE"; then
+        if [ "$PACKAGE" = "" ]; then
             showError 1 "Der Paketpfad konnte nicht korrekt verarbeitet werden."
+        elif ! checkPackage; then
+            showError 1 "Der Pfad zeigt nicht auf ein gültiges Installationspaket."
         fi
 
         # Das übergebene Paket ist ok. Lade die Konfigurationsdatei des Paketes und
         # berechnet die Ziel-Pfade für die Installation.
         loadConfigFile
-        getInstallerTargets
     fi
 
     # Aktionen, die als letzten Parameter einen Ausgabepfad erwarten
@@ -403,7 +408,7 @@ EOF
 # digest ~/Dokumente/foobar.txt
 EOF
 
-    showMsg "Das Paket wurde erfolgreich erstellt." ""
+    showMsg "Das Paket wurde erfolgreich erstellt."
 }
 
 
@@ -411,13 +416,16 @@ EOF
 ## Installiert ein Paket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployInstall() {
+    # Zielverzeichnisse für die Installation ermitteln
+    getInstallerTargets
+
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
 
     local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
                         && scope_str="Globale" || scope_str="Lokale"
     showMsg "${scope_str} Installation von Paket '$(getProjectInfo "")'" \
-            "aus Quelle $(absPath "$PACKAGE_STR")" \
+            "aus Quelle $(absPath "$PACKAGE_INPUT")" \
             "" \
             ""
 
@@ -490,7 +498,6 @@ cdeployInstall() {
         1)  showMsg "Es wurde 1 Datei kopiert." ;;
         *)  showMsg "Es wurden ${COUNT_CPY} Dateien kopiert." ;;
     esac
-    showMsg ""
 }
 
 
@@ -542,7 +549,7 @@ cdeployPack() {
     # Pfade ausgeben
     local filename="${OUTPUT%"$_PACK_EXT"}$_PACK_EXT"
 
-    showMsg "Quelle..: $(absPath "$PACKAGE_STR")" \
+    showMsg "Quelle..: $(absPath "$PACKAGE_INPUT")" \
             "Ziel....: $(absPath "$filename")"
 
     # Variablen prüfen
@@ -565,7 +572,7 @@ cdeployPack() {
                 "$OUTPUT"
     fi
 
-    showMsg "" "" "Das Installationsarchiv wurde erfolgreich erstellt." ""
+    showMsg "" "" "Das Installationsarchiv wurde erfolgreich erstellt."
 }
 
 
@@ -579,7 +586,7 @@ cdeployRemove() {
     local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
                         && scope_str="Globale" || scope_str="Lokale"
     showMsg "Entfernen der ${scope_str} Installation von Paket" \
-            "aus Quelle $(absPath "$PACKAGE_STR")" \
+            "aus Quelle $(absPath "$PACKAGE_INPUT")" \
             "" \
             ""
 
@@ -630,6 +637,7 @@ cdeployShowVersionAndExit() {
     showMsg "${_SCRIPT_NAME} v${_SCRIPT_VERSION}" \
             "Copyright (c) 2025 Christian Dorn" \
             "Alle Rechte vorbehalten."
+    exit 0
 }
 
 
@@ -676,17 +684,17 @@ assertIsFalse() {
 ## Prüfen ob ein Verzeichnis die Mindestanforderungen für ein
 ## Installationspaket erfüllt
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-checkPackageStructure() {
-    local package="$1"
-    local package_str="$2"
+checkPackage() {
+    local package="$PACKAGE"
+    local package_input="$PACKAGE_INPUT"
 
 
     if [[ ! -e "$package" ]]; then
         showError 1 "Das Paket wurde nicht gefunden:" \
-                    "$(absPath "$package_str")"
+                    "$(absPath "$package_input")"
     elif [[ ! -d "$package" ]]; then
         showError 1 "Das ist kein Verzeichnis:" \
-                    "$(absPath "$package_str")"
+                    "$(absPath "$package_input")"
     fi
 
     local src=""
@@ -832,7 +840,7 @@ dirIsEmpty() {
 ## wenn dieser keine URL darstellt.
 ## ---------------------------------------------------------------------
 downloadIfURL() {
-    local pack_url="$2"
+    local pack_url="$1"
 
     if [[ "$pack_url" =~ ^(https?|ftp|file):// ]]; then
         showTitle
@@ -842,7 +850,9 @@ downloadIfURL() {
            showError 1 "Die angegebene Quelle ist kein ${_PACK_EXT}-Archiv."
            return $?
         fi
-        showMsg "Lade Installationspaket von URL\n${pack_url}...\n"
+        showMsg "Lade Installationspaket von URL" \
+                "${pack_url}..." \
+                ""
 
         # temporäre Datei oder Verzeichnis
         local tmpfile;  tmpfile=$(mktemp "/tmp/cdeploy_pkg.XXXXXX${_PACK_EXT}") || \
@@ -1322,7 +1332,7 @@ makePackageInfo() {
         showTitle
 
         showMsg "Informationen zu Paket aus Quelle" \
-                "$(absPath "$PACKAGE")" \
+                "$(absPath "$PACKAGE_INPUT")" \
                 "" \
                 ""
 
@@ -1334,7 +1344,7 @@ makePackageInfo() {
 
         # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
         #                 Befehl gleichen Namens! Daher 'hsh' verwenden.
-        local hsh;  hsh="$(getFileHash "$PACKAGE")"
+        local hsh;  hsh="$(getFileHash "$PACKAGE_SOURCE")"
         case $? in
             1) hsh="${hsh} (Paket nicht gefunden)" ;;
             2) hsh="${hsh} (kein SHA-Tool gefunden)" ;;
@@ -1676,6 +1686,7 @@ showBottomLine() {
     # Ausgabe im Terminalfenster
     if isFalse $OPT_QUIET; then
         {
+        echo
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo
         } > /dev/tty
@@ -1712,7 +1723,9 @@ showError() {
             *)
                 # Ausgabe in Datei/Umleitung
                 printf "!!!! %s\n" "$line"
-                printf "  !! %s\n" "$@" ;;
+                if [ $# -gt 0 ]; then
+                    printf "  !! %s\n" "$@"
+                fi ;;
         esac
     fi
 
