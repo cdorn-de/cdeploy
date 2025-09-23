@@ -101,6 +101,7 @@ ENV_PATH_SET=0
 MANIFEST_FILE=""
 OPT_COMPRESSED=0
 OPT_DRYRUN=0
+OPT_FORCE=0
 OPT_QUIET=0
 OPT_SCOPE=""
 OPT_VERBOSE=0
@@ -198,7 +199,7 @@ parseParameters() {
     # Einige Aktionen benötigen keine weiteren Parameter. Bei diesen können wir hier
     # abbrechen. Sollten bei diesen Aktionen noch weitere Parameter angegeben sein,
     # wird eine Fehlermeldung ausgegeben.
-    if [[ "$ACTION" =~ ^(help|version)$ ]]; then
+    if [[ "$ACTION" =~ ^(help|list|version)$ ]]; then
         if [[ $# -gt 0 ]]; then
             showSyntaxAndExit "Diese Aktion benötigt keine Parameter: $ACTION"
         fi
@@ -207,9 +208,9 @@ parseParameters() {
 
     # Alle anderen Aktionen benötigen weitere Parameter. Eine Fehlermeldung ausgeben
     # und abbrechen, Wenn keine Parameter mehr vorhanden sind.
-    #if [[ $# -lt 1 ]]; then
-    #    showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
-    #fi
+    if [[ $# -lt 1 ]]; then
+        showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
+    fi
 
     # Aktionen, die als letzten Parameter ein Installationspaket erwarten
     if [[ "$ACTION" =~ ^(info|install|pack)$ ]]; then
@@ -266,38 +267,54 @@ parseParameters() {
                 showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
             # Optionen
             --compressed|-c)
+                assertAction compressed pack
                 assertIsFalse "compressed" "$OPT_COMPRESSED"
                 OPT_COMPRESSED=1 ;;
             --copyright=*)
+                assertAction copyright create
                 assertIsEmpty "copyright" "$PROJECT_COPYRIGHT"
                 PROJECT_COPYRIGHT="${arg#*=}" ;;
             --creator=*)
-                assertIsEmpty "anbieter" "$PROJECT_CREATOR"
+                assertAction creator create
+                assertIsEmpty "creator" "$PROJECT_CREATOR"
                 PROJECT_CREATOR="${arg#*=}" ;;
             --description=*)
-                assertIsEmpty "beschreibung" "$PROJECT_DESCRIPTION"
+                assertAction description create
+                assertIsEmpty "description" "$PROJECT_DESCRIPTION"
                 PROJECT_DESCRIPTION="${arg#*=}" ;;
             --dry-run|-d)
+                # für alle Aktionen erlaubt!
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
+            --force|-f)
+                assertAction force pack
+                assertIsFalse "force" $OPT_FORCE
+                OPT_FORCE=1 ;;
             --quiet|-q)
+                # für alle Aktionen erlaubt!
                 assertIsFalse "quiet" $OPT_QUIET
                 OPT_QUIET=1 ;;
             --global|-g)
-                assertIsEmpty "zielbereich" "$OPT_SCOPE"
+                assertAction scope install remove
+                assertIsEmpty "scope" "$OPT_SCOPE"
                 OPT_SCOPE="global" ;;
             --local|-l)
-                assertIsEmpty "zielbereich" "$OPT_SCOPE"
+                assertAction scope install remove
+                assertIsEmpty "scope" "$OPT_SCOPE"
                 OPT_SCOPE="local" ;;
             --name=*)
+                assertAction name create
                 PROJECT_NAME="${arg#*=}" ;;
             --url=*)
+                assertAction url create
                 assertIsEmpty "url" "$PROJECT_URL"
                 PROJECT_URL="${arg#*=}" ;;
             --verbose|-v)
+                assertAction verbose info
                 assertIsFalse "verbose" $OPT_VERBOSE
                 OPT_VERBOSE=1 ;;
             --version=*)
+                assertAction version create
                 assertIsEmpty "projektversion" "$PROJECT_VERSION"
                 PROJECT_VERSION="${arg#*=}" ;;
             # Alle anderen: Syntax anzeigen und abbrechen
@@ -306,14 +323,7 @@ parseParameters() {
     done
 
 
-## TODO Parameter auf Vollständigkeit prüfen
-
-
     # Auf Vollständigkeit prüfen
-    if [[ ! -e "$PACKAGE" && -d "$PACKAGE" ]]; then
-        showError 1 "Das angegebene Installationspaket existiert nicht."
-    fi
-
     if [[ "$ACTION" =~ ^(install|remove)$ && -z "$OPT_SCOPE" ]]; then
         showSyntaxError "Es wurde kein Zielbereich angegeben."
     fi
@@ -529,12 +539,6 @@ cdeployList() {
 ## Erstellt eine .cdp-Archivdatei aus einem Installationsverzeichnis
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployPack() {
-    # Zielpfad prüfen
-    if [[ -z "$OUTPUT" ]]; then
-        showMessage 1 "Es wurde kein Zielpfad angegeben."
-    fi
-
-
     # Zusammenfassung der Aufgabe anzeigen
     showTitle
 
@@ -546,11 +550,34 @@ cdeployPack() {
     fi
 
     # Archiv-Extension zum Pfad hinzufügen, wenn nötig;
-    # Pfade ausgeben
     local filename="${OUTPUT%"$_PACK_EXT"}$_PACK_EXT"
+    filename="$(absPath "$filename")"
 
+    # Pfade ausgeben
     showMsg "Quelle..: $(absPath "$PACKAGE_INPUT")" \
-            "Ziel....: $(absPath "$filename")"
+            "Ziel....: $(absPath "$filename")" \
+            "" \
+            ""
+
+    # Zielpfad prüfen
+    if [[ -z "$OUTPUT" ]]; then
+        showMsg "Es wurde kein Zielpfad angegeben."
+    elif [[ -e "$filename" ]]; then
+        if [[ -d "$filename" ]]; then
+            showError 1 "Es gibt bereits ein Verzeichnis mit diesem Namen." \
+                        "Verzeichnisse können nicht überschrieben werden."
+        elif isFalse "$OPT_FORCE"; then
+            local choice
+            showMsg "   Es gibt bereits ein Archiv mit diesem Namen." \
+                    "   Möchten Sie das bestehende Archiv überschreiben (ja/nein)?"
+            echo -n "   > "; read -r choice
+            case "$choice" in
+                j|ja)   showMsg "" "   (Das bestehende Archiv wird überschrieben.)" "" "" ;;
+                *)      showMsg "" "   (Vorgang vom Benutzer abgebrochen.)"
+                        quit 2 ;;
+            esac
+        fi
+    fi
 
     # Variablen prüfen
     for var in PROJECT_NAME OUTPUT; do
@@ -572,7 +599,7 @@ cdeployPack() {
                 "$OUTPUT"
     fi
 
-    showMsg "" "" "Das Installationsarchiv wurde erfolgreich erstellt."
+    showMsg "Das Installationsarchiv wurde erfolgreich erstellt."
 }
 
 
@@ -652,6 +679,26 @@ cdeployShowVersionAndExit() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 absPath() {
     echo "$(cd "$(dirname -- "$1")" && pwd)/$(basename -- "$1")"
+}
+
+
+## Stellt sicher, dass eine Option für die gewählte Aktion $ACTION erlaubt ist.
+## Die Option wird als erster Parameter an die Methode übergeben, die
+## erlaubte(n) Aktion(en) folgen danach.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+assertAction() {
+    local option="$1"
+    shift
+    local allowed=("$@")
+    for a in "${allowed[@]}"; do
+        [[ "$ACTION" == "$a" ]] && return 0
+    done
+
+    showError 0 "Die Option '${option}' ist nur in Zusammenhang mit der/den Aktion(en) erlaubt:" \
+                "    ${allowed[*]}" \
+                "Die gewählte Aktion ist aber '$ACTION'."
+    echo
+    showSyntaxAndExit
 }
 
 
@@ -1365,7 +1412,6 @@ makePackageInfo() {
             "    Global...........: ${BASE_GLOBAL:-./.}"
 
         showMsg "" \
-            "" \
             "Beschreibung:" \
             "${PROJECT_DESCRIPTION:-./.}" | fold -s -w "$_lw"
 
@@ -1733,9 +1779,9 @@ showError() {
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
     # in jedem anderen Fall einfach den Fehlercode zurückgeben
     if [ "$err_code" -ne 0 ] && [ "${BASH_SUBSHELL:=0}" -eq 0 ]; then
-        quit $err_code
+        quit "$err_code"
     else
-        return $err_code
+        return "$err_code"
     fi
 }
 
