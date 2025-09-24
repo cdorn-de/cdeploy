@@ -101,9 +101,9 @@ ENV_PATH_SET=0
 MANIFEST_FILE=""
 OPT_COMPRESSED=0
 OPT_DRYRUN=0
-OPT_FORCE=0
 OPT_QUIET=0
 OPT_SCOPE=""
+OPT_USEHOOKS=0
 OPT_VERBOSE=0
 OUTPUT=""
 OUTPUT_FORMATTED=1
@@ -286,10 +286,6 @@ parseParameters() {
                 # für alle Aktionen erlaubt!
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
-            --force|-f)
-                assertAction force pack
-                assertIsFalse "force" $OPT_FORCE
-                OPT_FORCE=1 ;;
             --quiet|-q)
                 # für alle Aktionen erlaubt!
                 assertIsFalse "quiet" $OPT_QUIET
@@ -309,6 +305,10 @@ parseParameters() {
                 assertAction url create
                 assertIsEmpty "url" "$PROJECT_URL"
                 PROJECT_URL="${arg#*=}" ;;
+            --use-hooks)
+                assertAction "use hooks" install pack remove
+                assertIsFalse "use hooks" $OPT_USEHOOKS
+                OPT_USEHOOKS=1 ;;
             --verbose|-v)
                 assertAction verbose info
                 assertIsFalse "verbose" $OPT_VERBOSE
@@ -337,9 +337,9 @@ parseParameters() {
 ## ========================================================================================
 
 
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ## Ein leeres Installationspaket erstellen
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployCreate() {
     # Zusammenfassung der Aufgabe anzeigen
     showTitle
@@ -398,6 +398,39 @@ $(makeConfigLine "PROJECT_DESCRIPTION" "$PROJECT_DESCRIPTION")
 
 ## Installation für den ausführenden Benutzer (Parameter 'local').
 #BASE_LOCAL="$HOME/.local"
+
+
+## ==========
+## HOOKS
+## Implementieren Sie die nachfolgenden Methoden, um den Installer
+## noch weiter an Ihre Bedürfnisse anzupassen.
+## ==========
+
+## Wird direkt VOR der Installation eines Paketes ausgeführt.
+#hookPreInstall() {
+#}
+
+## Wird direkt NACH der Intallation eines Paketes ausgeführt.
+#hookPostInstall() {
+#}
+
+
+## Wird direkt VOR dem Erstellen einer Archivdatei ausgeführt.
+#hookPrePack() {
+#}
+
+## Wird direkt NACH dem Erstellen eineer Archivdatei ausgeführt.
+#hookPrePack() {
+#}
+
+
+## Wird direkt VOR dem Entfernen eines Paketes ausgeführt.
+#hookPreRemove() {
+#}
+
+## Wird direkt NACH dem Entfernen eines Paketes ausgeführt.
+#hookPostRemove() {
+#}
 EOF
 
 
@@ -439,13 +472,22 @@ cdeployInstall() {
             "" \
             ""
 
-    # Zugriffsrechte prüfen, ggf. Kennwort für sudo abfragen
+    # Warnung bei Verwendung von Hooks; Zugriffsrechte prüfen, ggf. Kennwort abfragen
+    showHookWarning usesInstallHooks
     checkPermissions
 
     SHOW_SYNOPSIS=1
 
 
     ##### AB HIER WERDEN WIRKLICH ÄNDERUNGEN VORGENOMMEN #####
+
+
+    # Hook vor der Installation ausführen
+    if isOverridden hookPreInstall; then
+        showMsg "Pre-Install Hook ausführen"
+        hookPreInstall
+        showMsg ""
+    fi
 
 
     # Wenn eine lokale Installation stattfindet, sicherstellen, dass
@@ -501,6 +543,12 @@ cdeployInstall() {
         showMsg ""
     fi
 
+    # Hook nach der Installation ausführen
+    if isOverridden hookPostInstall; then
+        showMsg "" "Post-Install Hook ausführen"
+        hookPostInstall
+    fi
+
 
     showMsg "" "Installation abgeschlossen."
     case $COUNT_CPY in
@@ -544,9 +592,9 @@ cdeployPack() {
 
     local project_info;  project_info="$(getProjectInfo)"
     if [[ "$OPT_COMPRESSED" -eq 1 ]]; then
-        showMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." "" ""
+        showMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." ""
     else
-        showMsg "Erstelle Installationsarchiv für Paket ${project_info}." "" ""
+        showMsg "Erstelle Installationsarchiv für Paket ${project_info}." ""
     fi
 
     # Archiv-Extension zum Pfad hinzufügen, wenn nötig;
@@ -559,6 +607,9 @@ cdeployPack() {
             "" \
             ""
 
+    # Warnung ausgeben, falls das Paket Hooks verwendet
+    showHookWarning usesPackHooks
+
     # Zielpfad prüfen
     if [[ -z "$OUTPUT" ]]; then
         showMsg "Es wurde kein Zielpfad angegeben."
@@ -566,16 +617,6 @@ cdeployPack() {
         if [[ -d "$filename" ]]; then
             showError 1 "Es gibt bereits ein Verzeichnis mit diesem Namen." \
                         "Verzeichnisse können nicht überschrieben werden."
-        elif isFalse "$OPT_FORCE"; then
-            local choice
-            showMsg "   Es gibt bereits ein Archiv mit diesem Namen." \
-                    "   Möchten Sie das bestehende Archiv überschreiben (ja/nein)?"
-            echo -n "   > "; read -r choice
-            case "$choice" in
-                j|ja)   showMsg "" "   (Das bestehende Archiv wird überschrieben.)" "" "" ;;
-                *)      showMsg "" "   (Vorgang vom Benutzer abgebrochen.)"
-                        quit 2 ;;
-            esac
         fi
     fi
 
@@ -583,6 +624,13 @@ cdeployPack() {
     for var in PROJECT_NAME OUTPUT; do
         validateVar "$var"
     done
+
+    # Hook vor dem Verpacken ausführen
+    if isOverridden hookPrePack; then
+        showMsg "Pre-Pack Hook ausführen"
+        hookPrePack
+        showMsg ""
+    fi
 
     # Installationspaket verpacken
     if [[ "$OPT_COMPRESSED" -eq 1 ]]; then
@@ -599,7 +647,13 @@ cdeployPack() {
                 "$OUTPUT"
     fi
 
-    showMsg "Das Installationsarchiv wurde erfolgreich erstellt."
+    # Hook nach dem Verpacken ausführen
+    if isOverridden hookPostPack; then
+        showMsg "" "Post-Pack Hook ausführen"
+        hookPostPack
+    fi
+
+    showMsg "" "" "Das Installationsarchiv wurde erfolgreich erstellt."
 }
 
 
@@ -1330,6 +1384,25 @@ isFalse() {
 }
 
 
+## Prüfen ob ein Hook überschrieben wurde (also tatsächlich Code enthält)
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+isOverridden() {
+    local name="$1"
+    local def
+
+    # declare -f liefert die komplette Funktionsdefinition (oder nichts)
+    if ! def=$(declare -f "$name" 2>/dev/null); then
+        return 1  # Funktion existiert nicht -> nicht überschrieben
+    fi
+    # Wenn der Marker in der Definition vorkommt -> Default noch aktiv
+    if printf '%s\n' "$def" | grep -q '__DEFAULT_HOOK__'; then
+        return 1   # nicht überschrieben
+    else
+        return 0   # überschrieben
+    fi
+}
+
+
 ## Behandelt die übergebene Variable als Boolean; kehrt den Rückgabewert von 'isFalse' um.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 isTrue() {
@@ -1387,6 +1460,21 @@ makePackageInfo() {
         if [[ ! -e "$PACKAGE" ]]; then
             showError 1 "Das angegebene Paket wurde nicht gefunden."
             return 0
+        fi
+
+        # Hinweis ausgeben, wenn das Paket Hooks definiert
+        if usesHooks; then
+            showMsg \
+                "   ================================================================================" \
+                "    DIESES PAKET ENTHÄLT SKRIPTERWEITERUNGEN DES ANBIETERS, DIE DIE FUNKTIONALITÄT" \
+                "    VON CDEPLOY ERWEITERN. DIES IST KEIN FEHLER, STELLT ABER EIN POTENTIELLES" \
+                "    SICHERHEITSRISIKO DAR, DA SO AUCH SCHADHAFTER CODE AUSGEFÜHRT WERDEN KÖNNTE." \
+                "" \
+                "    VERWENDEN SIE DAS PAKET DAHER NUR, WENN SIE ES VON EINER VERTRAUENSWÜRDIGEN" \
+                "    QUELLE ERHALTEN HABEN!" \
+                "   ================================================================================" \
+                "" \
+                ""
         fi
 
         # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
@@ -1645,7 +1733,7 @@ quit() {
     if isTrue $SHOW_SYNOPSIS; then
         local warn_str
         [[ $COUNT_WRN -eq 1 ]] && warn_str="Warnung" || warn_str="Warnungen"
-        showMsg "${COUNT_WRN} ${warn_str}, ${COUNT_ERR} Fehler"
+        showMsg "" "${COUNT_WRN} ${warn_str}, ${COUNT_ERR} Fehler"
     fi
 
     # Ggf. Hinweis auf Testlauf ausgeben
@@ -1732,7 +1820,6 @@ showBottomLine() {
     # Ausgabe im Terminalfenster
     if isFalse $OPT_QUIET; then
         {
-        echo
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo
         } > /dev/tty
@@ -1784,6 +1871,41 @@ showError() {
         return "$err_code"
     fi
 }
+
+
+## Eine Warnmeldung ausgeben, wenn ein Paket Hooks definiert
+## ---------------------------------------------------------------------
+showHookWarning() {
+    if isFalse "$1"; then
+        return 0
+    elif isTrue "$OPT_USEHOOKS"; then
+        showMsg "DIE VERWENDUNG VON SKRIPTERWEITERUNGEN (\"HOOKS\") WURDE AKTIVIERT." "" ""
+        return 0
+    fi
+
+    showMsg \
+        "   WARNUNG" \
+        "   –––––––" \
+        "   DIESES PAKET ENTHÄLT SKRIPTERWEITERUNGEN DES ANBIETERS, DIE DIE FUNKTIONALITÄT" \
+        "   VON CDEPLOY ERWEITERN. DIES IST KEIN FEHLER, STELLT ABER EIN POTENTIELLES" \
+        "   SICHERHEITSRISIKO DAR, DA SO AUCH SCHADHAFTER CODE AUSGEFÜHRT WERDEN KÖNNTE." \
+        "" \
+        "   VERWENDEN SIE DAS PAKET DAHER NUR, WENN SIE ES VON EINER VERTRAUENSWÜRDIGEN" \
+        "   QUELLE ERHALTEN HABEN!" \
+        "" \
+        "   Wenn Sie das Paket trotzdem verwenden möchten, tippen Sie \"ja\"." \
+        "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
+
+    echo -n "   > "; read -r choice
+    if [[ "$choice" != "ja" ]]; then
+        showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
+        quit 2
+    fi
+
+    showMsg "" "   (Das Paket wird verwendet.)" "" ""
+    return 0
+}
+
 
 
 ## Eine Meldung ausgeben
@@ -1932,7 +2054,6 @@ toUppercase() {
 ## Gibt Eingabe durch less, more oder cat aus – je nach Umgebung
 ## ---------------------------------------------------------------------
 usePager() {
-    #if [[ -t 1 ]]; then
     if isTrue "$USE_PAGER"; then
         # interaktiv: Ausgabe an Terminal
         if command -v less >/dev/null 2>&1; then
@@ -1943,9 +2064,46 @@ usePager() {
             cat > /dev/tty
         fi
     else
-        # Ausgabe wurde umgeleitet (z. B. > datei.txt)
+        # Ausgabe ohne Pager
         cat
     fi
+}
+
+
+## Prüft ob mindestens ein Hook definiert ist
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+usesHooks() {
+    usesInstallHooks && return 0
+    usesPackHooks && return 0
+    usesRemoveHooks && return 0
+    return 1
+}
+
+
+## Prüft ob Install-Hooks verwendet werden
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+usesInstallHooks() {
+    isOverridden hookPreInstall && return 0
+    isOverridden hookPostInstall && return 0
+    return 1
+}
+
+
+## Prüft ob Pack-Hooks verwendet werden
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+usesPackHooks() {
+    isOverridden hookPrePack && return 0
+    isOverridden hookPostPack && return 0
+    return 1
+}
+
+
+## Prüft ob Remove-Hooks verwendet werden
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+usesRemoveHooks() {
+    isOverridden hookPreRemove && return 0
+    isOverridden hookPostRemove && return 0
+    return 1
 }
 
 
@@ -1961,6 +2119,21 @@ validateVar() {
         showError 1 "Variable $varname enthält ungültige Zeichen." "$value"
     fi
 }
+
+
+
+
+## ========================================================================================
+## Hooks definieren (leere Standard-Implementierungen)
+## Hooks können in der Datei 'cdeploy.conf' im Installationspaket überschrieben werden und
+## erweitern die Funktionalität von cdeploy.
+## ========================================================================================
+hookPreInstall()   { : __DEFAULT_HOOK__; }
+hookPostInstall()  { : __DEFAULT_HOOK__; }
+hookPrePack()      { : __DEFAULT_HOOK__; }
+hookPostPack()     { : __DEFAULT_HOOK__; }
+hookPreRemove()    { : __DEFAULT_HOOK__; }
+hookPostRemove()   { : __DEFAULT_HOOK__; }
 
 
 
