@@ -251,7 +251,9 @@ parseParameters() {
     fi
 
 
-    # Optionen auslesen
+    # Optionen normalisieren
+    local opts=()
+
     for arg in "$@"; do
         case "$arg" in
             # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
@@ -264,7 +266,29 @@ parseParameters() {
             pack|\
             remove|\
             version|-V)
-                showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
+                    showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $ACTION" ;;
+            --)     break ;;
+            --*)    # Langoption
+                    opts+=("$arg")
+                    ;;
+            -*)     # Kurzoption oder Kombination
+                    arg=${arg#-}
+                    local char=""
+                    while [ -n "$arg" ]; do
+                        char=${arg%"${arg#?}"}  # erstes Zeichen
+                        arg=${arg#?}            # Rest entfernen
+                        opts+=("-$char")        # Zum Array hinzufügen
+                    done
+                    ;;
+            *)      # Positionsargument - DARF NICHT MEHR VORKOMMEN!
+                    showSyntaxAndExit "Unbekannte Option: $arg" ;;
+        esac
+    done
+
+
+    # Optionen auswerten
+    for arg in "${opts[@]}"; do
+        case "$arg" in
             # Optionen
             --compressed|-c)
                 assertAction compressed pack
@@ -305,7 +329,7 @@ parseParameters() {
                 assertAction url create
                 assertIsEmpty "url" "$PROJECT_URL"
                 PROJECT_URL="${arg#*=}" ;;
-            --use-hooks)
+            --use-hooks|-u)
                 assertAction "use hooks" install pack remove
                 assertIsFalse "use hooks" $OPT_USEHOOKS
                 OPT_USEHOOKS=1 ;;
@@ -317,8 +341,8 @@ parseParameters() {
                 assertAction version create
                 assertIsEmpty "projektversion" "$PROJECT_VERSION"
                 PROJECT_VERSION="${arg#*=}" ;;
-            # Alle anderen: Syntax anzeigen und abbrechen
-            *)  showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
+            *)  # Alle anderen Optionen sind unbekannt! Syntax anzeigen und abbrechenl
+                showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
         esac
     done
 
