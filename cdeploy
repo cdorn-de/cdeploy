@@ -473,7 +473,7 @@ cdeployInstall() {
             ""
 
     # Warnung bei Verwendung von Hooks; Zugriffsrechte prüfen, ggf. Kennwort abfragen
-    showHookWarning usesInstallHooks
+    usesInstallHooks && showHookWarning
     checkPermissions
 
     SHOW_SYNOPSIS=1
@@ -608,7 +608,7 @@ cdeployPack() {
             ""
 
     # Warnung ausgeben, falls das Paket Hooks verwendet
-    showHookWarning usesPackHooks
+    usesPackHooks && showHookWarning
 
     # Zielpfad prüfen
     if [[ -z "$OUTPUT" ]]; then
@@ -653,7 +653,7 @@ cdeployPack() {
         hookPostPack
     fi
 
-    showMsg "" "" "Das Installationsarchiv wurde erfolgreich erstellt."
+    showMsg "Das Installationsarchiv wurde erfolgreich erstellt."
 }
 
 
@@ -1729,6 +1729,8 @@ manifestInit() {
 ## Skript beenden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 quit() {
+    local return_code="$1"
+
     # Zusammenfassung zu Fehlern und Warnungen ausgeben
     if isTrue $SHOW_SYNOPSIS; then
         local warn_str
@@ -1737,7 +1739,7 @@ quit() {
     fi
 
     # Ggf. Hinweis auf Testlauf ausgeben
-    if isTrue "$OPT_DRYRUN"; then
+    if [ "$return_code" -lt 255 ] && isTrue "$OPT_DRYRUN"; then
         showMsg "" \
                 "" \
                 "     !!! ============================================================== !!!" \
@@ -1753,7 +1755,7 @@ quit() {
     showBottomLine
 
     # Skript mit übergebenen Returncode abschließen
-    exit "$1"
+    exit "$return_code"
 }
 
 
@@ -1876,9 +1878,7 @@ showError() {
 ## Eine Warnmeldung ausgeben, wenn ein Paket Hooks definiert
 ## ---------------------------------------------------------------------
 showHookWarning() {
-    if isFalse "$1"; then
-        return 0
-    elif isTrue "$OPT_USEHOOKS"; then
+    if isTrue "$OPT_USEHOOKS"; then
         showMsg "DIE VERWENDUNG VON SKRIPTERWEITERUNGEN (\"HOOKS\") WURDE AKTIVIERT." "" ""
         return 0
     fi
@@ -1977,7 +1977,7 @@ showSyntaxAndExit() {
             "        cdeploy remove --global|--local <package>" \
             "        cdeploy version"
 
-    quit 1
+    quit 255
 }
 
 
