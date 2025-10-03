@@ -2169,10 +2169,25 @@ versionReadable() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 versionNormalized() {
     ver="$1"
-    # Jede Komponente auf 2 Stellen auffüllen
-    set -- "$(echo "$ver" | tr '.' ' ')"
-    printf "%02d%02d%02d" "${1:-0}" "${2:-0}" "${3:-0}"
+
+    # Aufteilen in drei Komponenten, fehlende = 0
+    major=$(echo "$ver" | cut -d. -f1)
+    minor=$(echo "$ver" | cut -d. -f2)
+    patch=$(echo "$ver" | cut -d. -f3)
+
+    major=${major:-0}
+    minor=${minor:-0}
+    patch=${patch:-0}
+
+    printf "%02d%02d%02d" "$major" "$minor" "$patch"
 }
+
+#versionNormalized() {
+#    ver="$1"
+#    # Jede Komponente auf 2 Stellen auffüllen
+#    set -- "$(echo "$ver" | tr '.' ' ')"
+#    printf "%02d%02d%02d" "${1:-0}" "${2:-0}" "${3:-0}"
+#}
 
 
 
