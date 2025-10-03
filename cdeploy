@@ -1682,6 +1682,10 @@ manifestAppend() {
     # SHA256 Hash ermitteln
     local hash;  hash="$(getFileHash "$filepath")"
 
+    # Projektname und -version
+    local pname;    pname="$PROJECT_NAME"
+    local pversion; pversion="$(versionNormalized "$PROJECT_VERSION")"
+
     # Dateigröße und mtime ermitteln
     local size mtime
     if stat --version >/dev/null 2>&1; then
@@ -1695,7 +1699,7 @@ manifestAppend() {
     fi
 
     # Zeile ins Manifest schreiben
-    fileAppend "$MANIFEST_FILE" "${filepath}\t${hash}\t${mtime}\t${category}\t${size}"
+    fileAppend "$MANIFEST_FILE" "${pname}\t${pversion}\t${filepath}\t${hash}\t${mtime}\t${category}\t${size}"
 }
 
 
@@ -2144,6 +2148,30 @@ validateVar() {
     if [[ "$value" =~ [^a-zA-Z0-9._/-] ]]; then
         showError 1 "Variable $varname enthält ungültige Zeichen." "$value"
     fi
+}
+
+
+## Liefert eine lesbare Form der übergebenen normalisierten Versionsnummer
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+versionReadable() {
+    ver="$1"
+    major="${ver%????}"
+    minor="${ver#"${major}"%????}"
+    minor="${ver#"${major}"}"
+    patch="${ver#"${major}${minor}"}"
+
+    # führende Nullen entfernen
+    printf "%d.%d.%d\n" "$major" "$minor" "$patch"
+}
+
+
+## Liefert eine normalisierte Form der übergebenen Versionsnummer
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+versionNormalized() {
+    ver="$1"
+    # Jede Komponente auf 2 Stellen auffüllen
+    set -- "$(echo "$ver" | tr '.' ' ')"
+    printf "%02d%02d%02d" "${1:-0}" "${2:-0}" "${3:-0}"
 }
 
 
