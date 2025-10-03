@@ -2155,12 +2155,23 @@ validateVar() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 versionReadable() {
     ver="$1"
-    major="${ver%????}"
-    minor="${ver#"${major}"%????}"
-    minor="${ver#"${major}"}"
-    patch="${ver#"${major}${minor}"}"
+
+    # Major = erstes Paar, Minor = zweites Paar, Patch = drittes Paar
+    major=${ver%????}       # entfernt die letzten 4 Stellen → Major+2 Stellen vom Ende
+    rest=${ver#${major}}    # restliche 4 Stellen
+    minor=${rest%??}        # die ersten 2 davon = Minor
+    patch=${rest#${minor}}  # die letzten 2 = Patch
 
     # führende Nullen entfernen
+    major=$(echo "$major" | sed 's/^0*//')
+    minor=$(echo "$minor" | sed 's/^0*//')
+    patch=$(echo "$patch" | sed 's/^0*//')
+
+    # Wenn leer → 0
+    major=${major:-0}
+    minor=${minor:-0}
+    patch=${patch:-0}
+
     printf "%d.%d.%d\n" "$major" "$minor" "$patch"
 }
 
@@ -2181,13 +2192,6 @@ versionNormalized() {
 
     printf "%02d%02d%02d" "$major" "$minor" "$patch"
 }
-
-#versionNormalized() {
-#    ver="$1"
-#    # Jede Komponente auf 2 Stellen auffüllen
-#    set -- "$(echo "$ver" | tr '.' ' ')"
-#    printf "%02d%02d%02d" "${1:-0}" "${2:-0}" "${3:-0}"
-#}
 
 
 
