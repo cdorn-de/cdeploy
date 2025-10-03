@@ -439,15 +439,6 @@ $(makeConfigLine "PROJECT_DESCRIPTION" "$PROJECT_DESCRIPTION")
 #}
 
 
-## Wird direkt VOR dem Erstellen einer Archivdatei ausgeführt.
-#hookPrePack() {
-#}
-
-## Wird direkt NACH dem Erstellen eineer Archivdatei ausgeführt.
-#hookPrePack() {
-#}
-
-
 ## Wird direkt VOR dem Entfernen eines Paketes ausgeführt.
 #hookPreRemove() {
 #}
@@ -505,6 +496,9 @@ cdeployInstall() {
 
     ##### AB HIER WERDEN WIRKLICH ÄNDERUNGEN VORGENOMMEN #####
 
+
+    # Paketinformation für ein späteres Entfernen speichern
+    saveRemoveHooks "${PACKAGE}/cdeploy.conf"
 
     # Hook vor der Installation ausführen
     if isOverridden hookPreInstall; then
@@ -649,13 +643,6 @@ cdeployPack() {
         validateVar "$var"
     done
 
-    # Hook vor dem Verpacken ausführen
-    if isOverridden hookPrePack; then
-        showMsg "Pre-Pack Hook ausführen"
-        hookPrePack
-        showMsg ""
-    fi
-
     # Installationspaket verpacken
     if [[ "$OPT_COMPRESSED" -eq 1 ]]; then
         # gzip-komprimiert
@@ -669,12 +656,6 @@ cdeployPack() {
             showError 1 \
                 "Fehler beim Erstellen des Installationspaketes." \
                 "$OUTPUT"
-    fi
-
-    # Hook nach dem Verpacken ausführen
-    if isOverridden hookPostPack; then
-        showMsg "" "Post-Pack Hook ausführen"
-        hookPostPack
     fi
 
     showMsg "Das Installationsarchiv wurde erfolgreich erstellt."
@@ -1295,7 +1276,7 @@ getInstallerTargets() {
     TARGET_BIN="${TARGET_BASE}/bin"
     TARGET_LIB="${TARGET_BASE}/lib"
     TARGET_ETC="${TARGET_BASE}/etc"
-    TARGET_MANIFEST="$(getManifestDir $OPT_SCOPE)"
+    TARGET_MANIFEST="$(getCdeployDir $OPT_SCOPE)/manifests"
 
     for var in PROJECT_NAME TARGET_BASE TARGET_BIN TARGET_ETC TARGET_LIB TARGET_MAN \
                 TARGET_MANIFEST TARGET_SYM; do
@@ -1306,10 +1287,10 @@ getInstallerTargets() {
 
 ## Liefert den Pfad zum lokalen/globalen Manifest-Verzeichnis
 ## ---------------------------------------------------------------------
-getManifestDir() {
-    case "$1" in
-    global) echo "/usr/local/share/${_SCRIPT_NAME}/manifests" ;;    # Pfad zurückgeben
-    local)  echo "$HOME/.local/share/${_SCRIPT_NAME}/manifests" ;;  # Pfad zurückgeben
+getCdeployDir() {
+    case "$OPT_SCOPE" in
+    global) echo "/usr/local/share/${_SCRIPT_NAME}" ;;    # Pfad zurückgeben
+    local)  echo "$HOME/.local/share/${_SCRIPT_NAME}" ;;  # Pfad zurückgeben
     *)      showError 1 "Illegaler Zielbereich: $1" ;;
     esac
 }
@@ -1609,8 +1590,8 @@ makePackageList() {
     local output
 
     output="$(
-    local local_manifests;  local_manifests=$(getManifestDir local)
-    local global_manifests; global_manifests=$(getManifestDir global)
+    local local_manifests;  local_manifests="$(getCdeployDir local)/manifests"
+    local global_manifests; global_manifests="$(getCdeployDir global)/manifests"
     local counter=0
 
     # Titel und Beschreibung der Aktion ausgeben
@@ -1783,6 +1764,37 @@ quit() {
 }
 
 
+## Speichert die Remove-Hooks (Paket config-Datei) für ein späteres Entfernen des Pakets
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+saveRemoveHooks() {
+    # prüfen, ob überhaupt Remove-Hooks implementiert sind; wenn nicht, direkt abbrechen
+    if ! usesRemoveHooks; then return 0; fi
+
+
+    local src_conf="$1"
+        local hook_dir; hook_dir="$(getCdeployDir)/hooks"
+    safeRun mkdir -p "$hook_dir" || \
+            showError 1 "Verzeichnis für Paketinformationen konnte nicht erstellt werden."
+
+    # Zieldatei z. B. "mypackage-1.0.hook"
+    local hook_file; hook_file="$(getProjectInfo "-").hook"
+    local hook_path="${hook_dir}/${hook_file}"
+
+    # config-Datei (cdeploy.conf) kopieren und zip-en;
+    # Datei ins Manifest aufnehmen
+    safeRun cp "$src_conf" "$hook_path" || \
+            showError 1 "Paketinformationen konnten nicht gespeichert werden."
+    if safeRun gzip -f "$hook_path"; then
+        manifestAppend "${hook_path}.gz" "hook"
+    else
+        manifestAppend "${hook_path}" "hook"
+    fi
+
+    showMsg "Paketinformationen gespeichert."
+    return 0
+}
+
+
 ## Anweisung sicher ausführen; automatisch sudo-Berechtigung verwenden,
 ## wenn nötig; bei Fehler Meldung ausgeben und Fehlercode zurückgeben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -1921,7 +1933,7 @@ showHookWarning() {
         "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
 
     echo -n "   > "; read -r choice
-    if [[ "$choice" != "ja" ]]; then
+    if [[ "$(toLowercase "$choice")" != "ja" ]]; then
         showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
         quit 2
     fi
@@ -2098,7 +2110,6 @@ usePager() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usesHooks() {
     usesInstallHooks && return 0
-    usesPackHooks && return 0
     usesRemoveHooks && return 0
     return 1
 }
@@ -2109,15 +2120,6 @@ usesHooks() {
 usesInstallHooks() {
     isOverridden hookPreInstall && return 0
     isOverridden hookPostInstall && return 0
-    return 1
-}
-
-
-## Prüft ob Pack-Hooks verwendet werden
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-usesPackHooks() {
-    isOverridden hookPrePack && return 0
-    isOverridden hookPostPack && return 0
     return 1
 }
 
@@ -2154,8 +2156,6 @@ validateVar() {
 ## ========================================================================================
 hookPreInstall()   { : __DEFAULT_HOOK__; }
 hookPostInstall()  { : __DEFAULT_HOOK__; }
-hookPrePack()      { : __DEFAULT_HOOK__; }
-hookPostPack()     { : __DEFAULT_HOOK__; }
 hookPreRemove()    { : __DEFAULT_HOOK__; }
 hookPostRemove()   { : __DEFAULT_HOOK__; }
 
