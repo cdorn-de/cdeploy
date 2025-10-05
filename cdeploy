@@ -246,7 +246,7 @@ parseParameters() {
                 showError 1 "Der Pfad zeigt nicht auf ein gültiges Installationspaket."
             fi
 
-            # Das übergebene Paket ist ok. Lade die Konfigurationsdatei des Paketes und
+            # Das übergebene Paket ist ok. Lade die Konfigurationsdatei des Pakets und
             # berechnet die Ziel-Pfade für die Installation.
             loadConfigFile "${PACKAGE}/cdeploy.conf"
             ;;
@@ -330,17 +330,13 @@ parseParameters() {
                 assertIsEmpty "description" "$PROJECT_DESCRIPTION"
                 PROJECT_DESCRIPTION="${arg#*=}" ;;
             --dry-run|-d)
-                # für alle Aktionen erlaubt!
+                assertAction "dry run" install remove
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
             --force|-f)
                 assertAction force remove
                 assertIsFalse "force" $OPT_FORCE
                 OPT_FORCE=1 ;;
-            --quiet|-q)
-                # für alle Aktionen erlaubt!
-                assertIsFalse "quiet" $OPT_QUIET
-                OPT_QUIET=1 ;;
             --global|-g)
                 assertAction scope install remove
                 assertIsEmpty "scope" "$OPT_SCOPE"
@@ -352,6 +348,10 @@ parseParameters() {
             --name=*)
                 assertAction name create
                 PROJECT_NAME="${arg#*=}" ;;
+            --quiet|-q)
+                # für alle Aktionen erlaubt!
+                assertIsFalse "quiet" $OPT_QUIET
+                OPT_QUIET=1 ;;
             --url=*)
                 assertAction url create
                 assertIsEmpty "url" "$PROJECT_URL"
@@ -460,20 +460,20 @@ $(makeConfigLine "PROJECT_DESCRIPTION" "$PROJECT_DESCRIPTION")
 ## noch weiter an Ihre Bedürfnisse anzupassen.
 ## ==========
 
-## Wird direkt VOR der Installation eines Paketes ausgeführt.
+## Wird direkt VOR der Installation eines Pakets ausgeführt.
 #hookPreInstall() {
 #}
 
-## Wird direkt NACH der Intallation eines Paketes ausgeführt.
+## Wird direkt NACH der Intallation eines Pakets ausgeführt.
 #hookPostInstall() {
 #}
 
 
-## Wird direkt VOR dem Entfernen eines Paketes ausgeführt.
+## Wird direkt VOR dem Entfernen eines Pakets ausgeführt.
 #hookPreRemove() {
 #}
 
-## Wird direkt NACH dem Entfernen eines Paketes ausgeführt.
+## Wird direkt NACH dem Entfernen eines Pakets ausgeführt.
 #hookPostRemove() {
 #}
 EOF
@@ -545,6 +545,9 @@ cdeployInstall() {
         ensureLocalPath PATH "$HOME/.local/bin"
         ensureLocalPath MANPATH "$HOME/.local/share/man"
     fi
+
+
+    local src dest
 
     # Verzeichnis ./bin kopieren
     src="${PACKAGE}/bin"
@@ -675,13 +678,13 @@ cdeployPack() {
         # gzip-komprimiert
         tar -czf "$filename" -C "$PACKAGE" . || \
             showError 1 \
-                "Fehler beim Erstellen des komprimierten Installationspaketes." \
+                "Fehler beim Erstellen des komprimierten Installationspakets." \
                 "$OUTPUT"
     else
         # schnell, unkomprimiert
         tar -cf "$filename" -C "$PACKAGE" . || \
             showError 1 \
-                "Fehler beim Erstellen des Installationspaketes." \
+                "Fehler beim Erstellen des Installationspakets." \
                 "$OUTPUT"
     fi
 
@@ -776,7 +779,7 @@ EOF
     fi
 
     # Alle Manifeste zum Paket auslesen. Diese Information wird benötigt um festzustellen,
-    # ob eine Datei in mehreren installierte Versionen eines Paketes vorkommt.
+    # ob eine Datei in mehreren installierte Versionen eines Pakets vorkommt.
     local package_name="${PACKAGE%-[0-9]*}"
     local all_manifests
     all_manifests="$(
@@ -913,11 +916,11 @@ EOF
         0) ;; # keine Ausgabe
         1) showMsg \
             "Hinweis: Eine Datei wurde nicht entfernt, da sie von mindestens einer weiteren" \
-            "         Version des Paketes '$PACKAGE' verwendet wird." \
+            "         Version des Pakets '$PACKAGE' verwendet wird." \
             "" ;;
         *) showMsg \
             "Hinweis: $err_inuse Dateien wurden nicht entfernt, da sie von mindestens einer" \
-            "         weiteren Version des Paketes '$PACKAGE' verwendet wird." \
+            "         weiteren Version des Pakets '$PACKAGE' verwendet wird." \
             "" ;;
     esac
 
@@ -946,6 +949,255 @@ EOF
 ## Hilfeseite (Manpage) anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployShowHelpAndExit() {
+    groff -man -Tutf8 -k <<'EOF' | less -R
+.TH CDEPLOY 1 "Oktober 2025" "Version 1.0" "Benutzerbefehle"
+.SH NAME
+.TP 10
+cdeploy –
+leichtgewichtiges, Bash-kompatibles Deployment-System für Softwarepakete
+.SH ÜBERSICHT
+.B cdeploy
+\fIBEFEHL\fR [\fIOPTIONEN\fR] [\fIARCHIV\fR] [\fIPAKET\fR]
+.SH BESCHREIBUNG
+\fBcdeploy\fR ist ein leichtgewichtiges, portables Deployment-System für Softwarepakete, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist.
+
+Es ermöglicht lokale und globale Installationen und verwaltet installierte Dateien über transparente Manifestdateien mit Hash-Prüfsummen. Für die globale Installation werden Administratorrechte benötigt.
+
+Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschließlich Standard-Unix-Werkzeuge. Es ist daher vor allem für Administratoren interessant, die es zum Einrichten und Warten von Rechnern verwenden können.
+
+.B PAKETSTRUKTUR
+.LP
+Die typische Struktur eines cdeploy-Pakets ist wie folgt:
+
+.RS
+.nf
+<Paket>
+   |- cdeploy.conf          # Umgebungsvariablen und Hooks
+   |- bin                   # Programme und Skripte
+   |- etc                   # Konfigurationsdateien
+   |- files                 # Sonstige Dateien
+   |    |- files.conf       # Zielverzeichnisse der Dateien
+   |- lib                   # Bibliotheken
+   |- man                   # Man-Pages
+.fi
+.RE
+
+Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR \fIetc\fR \fIlib\fR und \fIman\fR kopiert werden. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
+
+Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert. Sie können frei gewählt werden. Wenn der aktuelle Benutzer keinen Zugriff auf eines der Zielverzeichnisse hat, wird das sudo-Kennwort abgefragt.
+
+.SH BEFEHLE
+.TP
+.B create\fR [optionen] \fIPAKET\fR
+Legt ein leeres Installationspaket (Template) als Verzeichnis an. In dieses Verzeichnis können alle zu installierenden Dateien kopiert werden. Die Konfigurationsdateien ./cdeploy.conf und ./files/files.conf helfen bei der weiteren Konfiguration des Pakets.
+
+Zum Verpacken in einem Archiv für die Weitergabe an Dritte, siehe Befehl \fIpack\fR.
+.TP
+.B help
+Gibt diese Hilfeseite aus.
+.TP
+.B info\fR [optionen] \fIPAKET\fR
+Zeigt die Metadaten eines Pakets an (\fIName Version Ersteller Quelle/URL Hash Copyright Beschreibung\fR). (Siehe auch Option --verbose.)
+.TP
+.B install\fR [optionen] \fIPAKET\fR
+Installiert ein Paket aus einem lokalen Verzeichnis, einer lokalen Datei oder einer URL. Es muss zwingend eine der beiden Option --local oder --global verwendet werden.
+
+Die Funktionalität von \fBinstall\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss. (Siehe auch Option --use-hooks.)
+
+Aktualisiert das Manifest mit allen installierten Dateien inklusive deren Hash-Werten.
+.TP
+.B list
+Listet alle installierten Pakete und Versionen auf.
+.TP
+.B pack\fR [optionen] \fIARCHIV PAKET\fR
+Erstellt eine Archivdatei (.cdp) von einem offenen Installationsverzeichnis. Die Archivdatei bietet sich vor allem zur Weitergabe an Dritte an.
+.TP
+.B remove\fR [optionen] \fIPAKET\fR
+Entfernt ein installiertes Paket. Neben dem Paketnamen muss zwingend eine der beiden Optionen --local oder --global verwenendet werden.
+
+Standardmäßig werden keine Dateien entfernt, die nach ihrer Installation geändert wurden (siehe auch Option --force). Außerdem werden keine Dateien entfernt, die noch Teil mindestens einer weiteren Version des Pakets sind.
+
+Die Funktionalität von \fBremove\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss (siehe auch Option --use-hooks).
+
+Erfordert vor dem Entfernen eine Bestätigung.
+.TP
+.B version
+Zeigt die Versions- und Copyright-Informationen von \fBcdeploy\fR an.
+
+.SH OPTIONEN
+.TP
+.B --compressed | -c \fR--- (Befehl: pack)
+Erstellt ein komprimiertes Archiv. Standardmäßig werden Archive unkomprimiert erstellt, da sie zwar größer sind, aber schneller verarbeitet werden können. Komprimierte Archive sind dagegen kleiner, aber in der Verarbeitung langsamer.
+.TP
+.B --copyright=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets die Copyright-Informationen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --creator=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets den Namen des Erstellers ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --description=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets eine Beschreibung ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --dry-run | -d \fR--- (Befehle: install, remove)
+Führt einen Testlauf für die Installation/das Entfernen eines Pakets aus. Es werden hierbei keine Dateien hinzugefügt, entfernt oder geändert!
+.TP
+.B --force | -f \fR--- (Befehl: remove)
+Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer Intallation geändert wurden. Mit --force werden auch diese Dateien entfernt.
+.TP
+.B --global | -g \fR--- (Befehle: install, remove)
+Führt die Installation oder Entfernung im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
+.TP
+.B --local | -l \fR--- (Befehle: install, remove)
+Führt die Operation im benutzerspezifischen Verzeichnis aus.
+.TP
+.B --name=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets den Paketnamen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird..TP
+.B --quiet | -q
+Unterdrückt alle Ausgaben, Warn- und Fehlermeldungen. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --url=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets die Download-URL ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --use-hooks | -u \fR--- (Befehle: install, remove)
+Erlaubt die Nutzung von Hooks und verhindert die Sicherheitsabfrage bei der Ausführung. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --verbose | -v \fR--- (Befehl: info)
+Gibt zusätzlich zu den Metadaten eines Pakets auch alle enthaltenen Dateien und deren Zielverzeichnisse aus.
+.TP
+.B --version=".." \fR--- (Befehl: create)
+Trägt beim Erstellen eines leeren Pakets die Paketversion ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+
+
+.SH DATEIEN
+.TP
+.I ~/.local/PAKET
+Standardpfad für lokale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
+.TP
+.I /usr/local/PAKET
+Standardpfad für globale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
+.TP
+.I ~/.local/share/cdeploy
+Lokaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+.TP
+.I /usr/local/share/cdeploy
+Globaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+.TP
+.I @/manifests/MANIFEST
+Einthält die vom Paket installierten Dateien inklusive Prüfsummen.
+.TP
+.I @/hooks/HOOKDATEI
+Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat.
+
+.SH HOOKS
+Hooks sind optionale Shell-Skripte, die von einem Paket implementiert werden können, um den Installations- oder Entfernungsprozess zu erweitern. Die folgenden Hook-Typen werden unterstützt:
+.TP
+.B pre- und post-install
+Wird vor bzw. nach dem Kopieren der Dateien ausgeführt.
+.TP
+.B pre- und post-remove
+Wird vor bzw. nach dem Entfernen eines Pakets ausgeführt.
+.RE
+.sp
+Hooks werden über gespeicherte SHA256-Hashes im Manifest verifiziert.
+.sp
+Vor der Ausführung erfolgt eine Sicherheitswarnung.
+
+.SH RÜCKGABEWERTE
+.TP
+0
+Die Operation wurde erfolgreich abgeschlossen.
+.TP
+1
+Ein Fehler ist aufgetreten.
+.TP
+2
+Die Operation wurde vom Benutzer abgebrochen.
+
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B PROJECT_NAME
+Der Name für das Installationspaket.
+.TP
+.B PROJECT_VERSION
+Die Versionsnummer des Installationspakets.
+.TP
+.B PROJECT_CREATOR
+Der Ersteller des Installationspakets.
+.TP
+.B PROJECT_URL
+Die Download-URL des Installationspakets.
+.TP
+.B PROJECT_COPYRIGHT
+Die Copyright-Information zum Installationspaket.
+.TP
+.B PROJECT_DESC
+Eine Beschreibung des Installationspakets.
+
+.TP
+.B BASE_LOCAL
+Bestimmt das Standardbasisverzeichnis für lokale Installationen.
+.TP
+.B BASE_GLOBAL
+Bestimmt das Standardbasisverzeichnis für globale Installationen.
+
+.SH BEISPIELE
+.TP
+Lokale Installation eines Pakets:
+.EX
+cdeploy install --local ./meinpaket.cdp
+.EE
+.TP
+Globale Installation eines Pakets:
+.EX
+cdeploy install --global ./meinpaket.cdp
+.EE
+.TP
+Auflisten aller installierten Pakete:
+.EX
+cdeploy list
+.EE
+.TP
+Entfernen eines Pakets. Es muss der Paketname inkl. Paketversion angegeben werden (siehe auch: \fBcdeploy list\fR):
+.EX
+cdeploy remove meinpaket-1.0
+.EE
+.TP
+Eine Archivdatei erstellen:
+.EX
+cdeploy pack ./meinarchiv.cdp ./meinpaket
+.EE
+.TP
+Informationen zu einem Paket abfragen:
+.EX
+cdeploy info ./meinpaket.cdp
+.EE
+
+.SH AUTOR
+Christian Dorn <mail@c-dorn.de>
+
+.SH COPYRIGHT
+Copyright (c) 2025 Christian Dorn
+.br
+Alle Rechte vorbehalten.
+
+.SH LIZENZ
+Dieses Projekt wird unter der MIT-Lizenz bereitgestellt.
+.sp
+Die Software darf frei verwendet, kopiert, verändert und verteilt werden, sofern der obige Copyright-Hinweis in allen Kopien enthalten bleibt.
+
+.SH SIEHE AUCH
+.BR cp (1),
+.BR gunzip (1),
+.BR gzip (1),
+.BR mkdir (1),
+.BR rm (1).
+.BR rmdir (1),
+.BR sh (1),
+.BR sha256sum (1),
+.BR shasum (1),
+.BR sudo (8)
+EOF
+
      exit 0
 }
 
@@ -1404,7 +1656,7 @@ finalCleanup() {
 
 
 ## Freies Kopieren von Dateien und Verzeichnissen im ./files Verzeichnis
-## des Installationspaketes. Das Ziel für diese Objekte muss in der
+## des Installationspakets. Das Ziel für diese Objekte muss in der
 ## Datei ./files/files.conf definiert werden.
 ## Beispiel:
 ##     foo.txt ~/Dokumente
@@ -2392,9 +2644,11 @@ showSyntaxAndExit() {
 
     # Gültige Syntax ausgeben
     showMsg "Syntax: cdeploy help" \
-            "        cdeploy create [opt...] <package>" \
+            "        cdeploy create [opt...] <output>" \
             "        cdeploy info [--verbose] [--quiet] <package>" \
             "        cdeploy install --global|--local [--use-hooks] <package>" \
+            "        cdeploy list" \
+            "        cdeploy pack [--compressed] <archive>.cdp <package>" \
             "        cdeploy remove --global|--local [--use-hooks] [--force] <package>" \
             "        cdeploy version"
 
