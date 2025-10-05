@@ -50,7 +50,9 @@
 
 
 ## Einstellungen für 'micro' Codeeditor (Einstellungen werden als Kommentare geschrieben!)
+# shellcheck disable=SC1090     # Fehler: 'non-constant source' beim Laden von Dateien
 # shellcheck disable=SC2317     # Fehler: Befehl unerreichbar
+# shellcheck disable=SC2001     # Fehler: Bash-Anweisung nutzen; Skript soll POSIX-konform werden
 
 
 # Abbruchkriterien für das Skript
@@ -82,6 +84,8 @@ readonly _SCRIPT_NAME="cdeploy"
 readonly _SCRIPT_VERSION="1.0"
 readonly _PACK_EXT=".cdp"       # Extension für Paket-Archive
 readonly _PACK_EXT_RE="\\.cdp"  # ...zur Verwendung mit RegEx
+readonly _SHELL_BIN="${SHELL:-/bin/sh}"
+
 
 # Skript-Konfiguration
 PROJECT_NAME="tools"
@@ -94,6 +98,7 @@ PROJECT_DESCRIPTION=""
 ACTION=""
 BASE_GLOBAL="/usr/local"
 BASE_LOCAL="$HOME/.local"
+BASE_TARGET=""
 COUNT_CPY=0
 COUNT_ERR=0
 COUNT_WRN=0
@@ -101,6 +106,7 @@ ENV_PATH_SET=0
 MANIFEST_FILE=""
 OPT_COMPRESSED=0
 OPT_DRYRUN=0
+OPT_FORCE=0
 OPT_QUIET=0
 OPT_SCOPE=""
 OPT_USEHOOKS=0
@@ -111,9 +117,9 @@ PACKAGE=""
 PACKAGE_SOURCE=""
 PACKAGE_INPUT=""
 SHOW_SYNOPSIS=0
-TARGET_BASE=""
 TARGET_BIN=""
 TARGET_ETC=""
+TARGET_HOOKS=""
 TARGET_LIB=""
 TARGET_MAN=""
 TARGET_MANIFEST=""
@@ -121,7 +127,7 @@ TARGET_SYM=""
 USE_PAGER=0
 USE_SUDO=""
 
-declare -ga TEMP_OBJECTS=()
+declare -ga TMP_OBJECTS=()
 
 # Formatierungen
 readonly _BOLD="\033[1m"
@@ -213,36 +219,53 @@ parseParameters() {
     fi
 
     # Aktionen, die als letzten Parameter ein Installationspaket erwarten
-    if [[ "$ACTION" =~ ^(info|install|pack)$ ]]; then
-        PACKAGE="${!#}"
-        PACKAGE_INPUT="$PACKAGE"   # zur Anzeige für den Fall, dass $PACKAGE entpackt wird
-        PACKAGE_SOURCE="$PACKAGE"  # zur Berechnung des Hash
-        set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+    case "$ACTION" in
+        info|install|pack)
+            PACKAGE="${!#}"
+            PACKAGE_INPUT="$PACKAGE"   # zur Anzeige für den Fall, dass $PACKAGE entpackt wird
+            PACKAGE_SOURCE="$PACKAGE"  # zur Berechnung des Hash
+            set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
 
-        # Datei herunterladen, wenn $PACKAGE eine URL ist
-        # (http://, https://, ftp:// oder file://)
-        local result
-        result="$(downloadIfURL "$PACKAGE")" || showError $? "$result"
-        PACKAGE="$result"
+            # Datei herunterladen, wenn $PACKAGE eine URL ist
+            # (http://, https://, ftp:// oder file://)
+            local result
+            result="$(downloadIfURL "$PACKAGE")" || showError $? "$result"
+            PACKAGE="$result"
 
-        # Datei extrahieren, wenn sie ein Archiv ist. Sicherstellen dass PACKAGE_SOURCE auf
-        # das Archiv verweist, und nicht auf das entpackte Paket. Diese Information wird
-        # zur Berechnung des Hash benötigt.
-        result="$(extractPackage "$PACKAGE")" || showError $? "$result"
-        PACKAGE_SOURCE="$PACKAGE"
-        PACKAGE="$result"
+            # Datei extrahieren, wenn sie ein Archiv ist. Sicherstellen dass PACKAGE_SOURCE auf
+            # das Archiv verweist, und nicht auf das entpackte Paket. Diese Information wird
+            # zur Berechnung des Hash benötigt.
+            result="$(extractPackage "$PACKAGE")" || showError $? "$result"
+            PACKAGE_SOURCE="$PACKAGE"
+            PACKAGE="$result"
 
-        # Pfad prüfen und zurückgeben
-        if [ "$PACKAGE" = "" ]; then
-            showError 1 "Der Paketpfad konnte nicht korrekt verarbeitet werden."
-        elif ! checkPackage; then
-            showError 1 "Der Pfad zeigt nicht auf ein gültiges Installationspaket."
-        fi
+            # Pfad prüfen und zurückgeben
+            if [ "$PACKAGE" = "" ]; then
+                showError 1 "Der Paketpfad konnte nicht korrekt verarbeitet werden."
+            elif ! checkPackage; then
+                showError 1 "Der Pfad zeigt nicht auf ein gültiges Installationspaket."
+            fi
 
-        # Das übergebene Paket ist ok. Lade die Konfigurationsdatei des Paketes und
-        # berechnet die Ziel-Pfade für die Installation.
-        loadConfigFile
-    fi
+            # Das übergebene Paket ist ok. Lade die Konfigurationsdatei des Paketes und
+            # berechnet die Ziel-Pfade für die Installation.
+            loadConfigFile "${PACKAGE}/cdeploy.conf"
+            ;;
+        remove)
+            # Hier wird der letzte Parameter als Name der Manifestdatei gewertet, deren
+            # Installation entfernt werden soll. Der Wert wird einfach übernommen und erst
+            # später weiter geprüft und verarbeitet.
+            PACKAGE="${!#}"
+            case "$PACKAGE" in
+                *.manifest) PACKAGE="${PACKAGE%.manifest}" ;;
+            esac
+            PACKAGE_INPUT="$PACKAGE"        # zur Anzeige für den Fall, dass $PACKAGE entpackt wird
+            PACKAGE_SOURCE="$PACKAGE"       # zur Berechnung des Hash
+            PROJECT_NAME="${PACKAGE%-*}"    # Versionsnummer für Projektnamen entfernen
+            set -- "${@:1:$(($#-1))}"       # letzten Parameter entfernen
+            ;;
+        *)
+            ;; # keine Aktion
+    esac
 
     # Aktionen, die als letzten Parameter einen Ausgabepfad erwarten
     if [[ "$ACTION" =~ ^(create|pack)$ ]]; then
@@ -310,6 +333,10 @@ parseParameters() {
                 # für alle Aktionen erlaubt!
                 assertIsFalse "dry run" $OPT_DRYRUN
                 OPT_DRYRUN=1 ;;
+            --force|-f)
+                assertAction force remove
+                assertIsFalse "force" $OPT_FORCE
+                OPT_FORCE=1 ;;
             --quiet|-q)
                 # für alle Aktionen erlaubt!
                 assertIsFalse "quiet" $OPT_QUIET
@@ -330,7 +357,7 @@ parseParameters() {
                 assertIsEmpty "url" "$PROJECT_URL"
                 PROJECT_URL="${arg#*=}" ;;
             --use-hooks|-u)
-                assertAction "use hooks" install pack remove
+                assertAction "use hooks" install remove
                 assertIsFalse "use hooks" $OPT_USEHOOKS
                 OPT_USEHOOKS=1 ;;
             --verbose|-v)
@@ -348,9 +375,12 @@ parseParameters() {
 
 
     # Auf Vollständigkeit prüfen
-    if [[ "$ACTION" =~ ^(install|remove)$ && -z "$OPT_SCOPE" ]]; then
-        showSyntaxError "Es wurde kein Zielbereich angegeben."
-    fi
+    case "$ACTION" in
+        install|remove)
+            if [ -z "$OPT_SCOPE" ]; then
+                showSyntaxAndExit "Es wurde kein Zielbereich angegeben."
+            fi ;;
+    esac
 }
 
 
@@ -625,9 +655,6 @@ cdeployPack() {
             "" \
             ""
 
-    # Warnung ausgeben, falls das Paket Hooks verwendet
-    usesPackHooks && showHookWarning
-
     # Zielpfad prüfen
     if [[ -z "$OUTPUT" ]]; then
         showMsg "Es wurde kein Zielpfad angegeben."
@@ -670,16 +697,248 @@ cdeployRemove() {
     showTitle
 
     local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
-                        && scope_str="Globale" || scope_str="Lokale"
-    showMsg "Entfernen der ${scope_str} Installation von Paket" \
-            "aus Quelle $(absPath "$PACKAGE_INPUT")" \
+                        && scope_str="global" || scope_str="lokal"
+
+    showMsg "" \
+            "Entferne ${scope_str}e Installation von Paket '${PACKAGE}'." \
+            ""
+
+
+    # Hook und Manifestdatei merken, müssen ganz zum Schluss entfernt werden.
+    local manifest_file;  manifest_file="$(getCdeployDir "$OPT_SCOPE")/manifests/${PACKAGE}.manifest"
+    local hook_file;  hook_file="$(getCdeployDir "$OPT_SCOPE")/hooks/${PACKAGE}.hook"
+
+    # Manifestdatei ermitteln
+    local manifest
+    if ! manifest="$(getManifestContent "$PACKAGE".manifest "$OPT_SCOPE")"; then
+        showError 1 "Es wurde keine ${scope_str}e Installation von '${PACKAGE}' gefunden." \
+                    "Verwenden Sie 'cdeploy list' um alle installierten Pakete anzuzeigen."
+    fi
+
+
+    # Sicherheitsabfrage und ggf. Bestätigung
+    showMsg "" \
+            "   Möchten Sie die ${scope_str}e Installation von '${PACKAGE}'" \
+            "   wirklich entfernen? Dieser Vorgang kann nicht widerrufen werden!" \
+            "" \
+            "   Wenn Sie das Paket entfernen möchten, tippen Sie \"ja\"." \
+            "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
+    printf  '   > '; IFS= read -r choice
+    if [ "$(toLowercase "$choice")" != "ja" ]; then
+        showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
+        quit 2
+    fi
+
+    showMsg "" \
+            "" \
+            "   (Paket '${PACKAGE}' wird entfernt.)" \
             "" \
             ""
 
-    # Zugriffsrechte prüfen, ggf. Kennwort für sudo abfragen
+
+    # Gespeicherte Paketinformation inkl. Remove-Hooks auslesen; dazu brauchen wir den Hash
+    # für die Hookdatei, der an 'loadRemoveHooks' übergeben wird.
+    local h_hsh h_category
+    while IFS="$(printf '\t')" read -r _ h_hsh _ _ _ _ h_category _; do
+        if [ "$h_category" != "hook" ]; then h_hsh=""; fi
+        break  # Nur erste Zeile prüfen
+    done <<EOF
+$manifest
+EOF
+
+    loadRemoveHooks "$h_hsh"
+    getInstallerTargets
+
+    # Warnung bei Verwendung von Hooks; Zugriffsrechte prüfen, ggf. Kennwort abfragen
+    usesRemoveHooks && showHookWarning
     checkPermissions
 
     SHOW_SYNOPSIS=1
+
+
+    ##### AB HIER WERDEN WIRKLICH ÄNDERUNGEN VORGENOMMEN #####
+
+
+    # Status-Variablen definieren
+    local file_count=0
+    local err_count=0
+    local err_hash=0
+    local err_inuse=0
+    local err_invalid=0
+    local err_notfound=0
+    local err_rm=0
+
+    # Hook vor dem Entfernen ausführen
+    if isOverridden hookPreRemove; then
+        showMsg "Pre-Remove Hook ausführen"
+        hookPreRemove
+        showMsg ""
+    fi
+
+    # Alle Manifeste zum Paket auslesen. Diese Information wird benötigt um festzustellen,
+    # ob eine Datei in mehreren installierte Versionen eines Paketes vorkommt.
+    local package_name="${PACKAGE%-[0-9]*}"
+    local all_manifests
+    all_manifests="$(
+        getManifestContent "${package_name}" "local" 2>/dev/null || true
+        getManifestContent "${package_name}" "global" 2>/dev/null || true
+        )"
+
+    # Manifest zeilenweise verarbeiten, Datei(en) entfernen;
+    # Zur Erinnerung: Leer- und Kommentarzeilen wurden beim Einlesen
+    #                 der Manifeste bereits ignoriert!
+    # Zur Erinnerung: "hash" kann nicht als Variablenname verwendet werden, weil es
+    #                 u.U. mit einer Shell-Funktion gleichen Namens kollidiert! => $hsh
+    local current_hash=""
+    local occurences
+
+    while IFS="$(printf '\t')" read -r m_filepath m_hsh m_pname m_pversion m_scope _ m_cat _; do
+        # Sonderfall Hookdatei: überspringen
+        [ "$m_cat" = "hook" ] && continue
+        # Falls alle Werte leer sind (z. B. nach letzten Zeilenumbruch) -> überspringen
+        [ -z "$m_filepath$m_hsh$m_pname$m_pversion$m_scope" ] && continue
+        file_count=$((file_count + 1))
+
+        # Jede Spalte prüfen – wenn eine fehlt, Fehler zählen und überspringen
+        if [ -z "$m_filepath" ] || [ -z "$m_hsh" ] || [ -z "$m_pname" ] || [ -z "$m_pversion" ] || [ -z "$m_scope" ]; then
+            showWarning "Ungültiger Manifest-Eintrag. Eintrag wird übersprungen."
+            err_invalid=$((err_invalid + 1))
+            continue
+        fi
+
+        # Existenz der Datei und ggf. Hash prüfen
+        if [ ! -L "$m_filepath" ]; then
+            if [ ! -e "$m_filepath" ]; then
+                showWarning "Nicht gefunden: $m_filepath"
+                err_notfound=$((err_notfound + 1))
+                continue
+            fi
+
+            current_hash="$(getFileHash "$m_filepath")"
+            if isFalse "$OPT_FORCE" && [ "$current_hash" != "$m_hsh" ]; then
+                showWarning "Überspringe $m_filepath (Hash abweichend)"
+                err_hash=$((err_hash + 1))
+                continue
+            fi
+        fi
+
+        # Prüfen ob die Datei noch in anderen Paketversionen verwendet wird.
+        # Da $all_manifests auch die Manifestdatei für das zu löschende Paket enthält, kommt
+        # jede Datei mindestens einmal darin vor. Wir müssen also suche, bis eine Datei
+        # zum zeitenmal gefunden wird...
+        occurences=0
+        while IFS="$(printf '\t')" read -r o_filepath _; do
+            [ "$m_filepath" = "$o_filepath" ] && occurences=$((occurences + 1))
+            [ "$occurences" -ge 2 ] && break
+        done <<EOF
+$all_manifests
+EOF
+
+        # Wenn die Datei von mehreren Paketversionen verwendet wird,
+        # mit nächster Datei fortfahren
+        if [ "$occurences" -gt 1 ]; then
+            err_inuse=$((err_inuse + 1))
+            continue
+        fi
+
+        # Datei entfernen
+        if isTrue "$OPT_DRYRUN"; then
+            showMsg "  X  $m_filepath"
+        elif safeRun rm -f "$m_filepath"; then
+            showMsg "  X  $m_filepath"
+            removeDir "$(dirname "$m_filepath")"
+        else
+            showWarning "Löschen fehlgeschlagen: $m_filepath"
+            err_rm=$((err_rm + 1))
+        fi
+    done <<EOF
+$manifest
+EOF
+
+
+    # Hook nach dem Entfernen ausführen
+    if isOverridden hookPostRemove; then
+        showMsg "" "Post-Remove Hook ausführen"
+        hookPostInstall
+    fi
+
+
+#1111
+    # Projektverzeichnis, Manifestdatei und Hookdatei entfernen, wenn möglich
+    if isTrue "$OPT_DRYRUN"; then
+        echo
+        showMsg "  X  HOOKDATEI $hook_file"
+        showMsg "  X  PROJEKTVERZEICHNIS $BASE_TARGET"
+        showMsg "  X  MANIFESTDATEI $manifest_file"
+    else
+        echo
+        [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
+        safeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
+        removeDir "$TARGET_HOOKS"
+        safeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
+        removeDir "$TARGET_MANIFEST"
+        removeDir "$(getCdeployDir "$OPT_SCOPE")"
+        removeDir "$BASE_TARGET" "  X  PROJEKTVERZEICHNIS $BASE_TARGET"
+    fi
+
+    # Abschluss
+    err_count=$((err_hash + err_notfound + err_invalid + err_rm ))
+    if [ "$err_count" -eq 0 ]; then
+        showMsg "" \
+                "" \
+                "Das Paket '$PACKAGE' wurde entfernt." \
+                ""
+    else
+        showMsg "" \
+                "" \
+                "Das Paket '$PACKAGE' konnte nicht vollständig entfernt werden." \
+                ""
+    fi
+
+    case "$err_hash" in
+        0) ;;  # keine Ausgabe
+        1) showMsg  \
+            "Hinweis: Eine Datei wurde nicht entfernt, da sie seit der Installation" \
+            "         geändert wurde. Diese Datei kann mit der Option '--force'"\
+            "         entfernt werden." \
+            "" ;;
+        *) showMsg \
+            "Hinweis: $err_hash Dateien wurden nicht entfernt, da sie seit der Installation" \
+            "         geändert wurden. Diese Dateien können mit der Option '--force'" \
+            "         entfernt werden." \
+            "" ;;
+    esac
+
+    case "$err_inuse" in
+        0) ;; # keine Ausgabe
+        1) showMsg \
+            "Hinweis: Eine Datei wurde nicht entfernt, da sie von mindestens einer weiteren" \
+            "         Version des Paketes '$PACKAGE' verwendet wird." \
+            "" ;;
+        *) showMsg \
+            "Hinweis: $err_inuse Dateien wurden nicht entfernt, da sie von mindestens einer" \
+            "         weiteren Version des Paketes '$PACKAGE' verwendet wird." \
+            "" ;;
+    esac
+
+    local remaining;  remaining=$((err_invalid + err_notfound ))
+    case "$remaining" in
+        0) ;; # keine Ausgabe
+        1) showMsg  "Hinweis: Eine Datei wurde nicht gefunden." \
+                    "" ;;
+        *) showMsg  "Hinweis: $remaining Dateien wurden nicht gefunden." \
+                    "" ;;
+    esac
+
+    case "$err_rm" in
+        0) ;; # keine Ausgabe
+        1) showMsg  "Hinweis: Eine Datei konnte nicht gelöscht werden." \
+                    "" ;;
+        *) showMsg  "Hinweis: $err_rm Dateien konnten nicht gelöscht werden." \
+                    "" ;;
+    esac
+
+    quit 0
 }
 
 
@@ -687,8 +946,7 @@ cdeployRemove() {
 ## Hilfeseite (Manpage) anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdeployShowHelpAndExit() {
-    showMsg "Hier steht die Hilfeseite."
-    exit 0
+     exit 0
 }
 
 
@@ -863,7 +1121,7 @@ checkPermissions() {
     if [[ $USE_SUDO == "" ]]; then
         local files_conf="${PACKAGE}/files.conf"
 
-        # Wenn files.conf nicht existiert → kein sudo nötig
+        # Wenn files.conf nicht existiert -> kein sudo nötig
         [[ -f "$files_conf" ]] || return 0
 
         # 2.2 Alle Zielpfade auslesen
@@ -875,7 +1133,7 @@ checkPermissions() {
             local src dest
             read -r src dest <<<"$line"
 
-            # Wenn kein Ziel angegeben → überspringen
+            # Wenn kein Ziel angegeben -> überspringen
             [[ -z "$dest" ]] && continue
 
             # Prüfen, ob Zielverzeichnis Schreibrechte erfordert
@@ -908,7 +1166,7 @@ copyFiles() {
                 safeRun chmod 755 "$dest_dir/$(basename "$f")" \
                     "MSG:  -> $dest_dir/$(basename "$f")"
                 manifestAppend "$dest_dir/$(basename "$f")" "$category"
-                ((COUNT_CPY+=1))
+                COUNT_CPY=$((COUNT_CPY + 1))
             fi
         done
         shopt -u nullglob
@@ -1060,8 +1318,7 @@ EOF
 
         # Rückmeldung an den Benutzer
         case $- in
-            *i*)  # shellcheck disable=SC1090
-                  . "$profile" && showMsg "  -> \$$varname wurde aktualisiert." ;;
+            *i*)  . "$profile" && showMsg "  -> \$$varname wurde aktualisiert." ;;
             *)    showMsg "  -> \$$varname wurde angepasst. Bitte das Terminal neu starten." "" ;;
         esac
     fi
@@ -1137,7 +1394,7 @@ finalCleanup() {
     fi
 
     # Temporäre Dateien/Verzeichnisse entfernen
-    for p in "${TEMP_OBJECTS[@]}"; do
+    for p in "${TMP_OBJECTS[@]}"; do
         [[ -e $p ]] && safeRun rm -rf -- "$p"
     done
 
@@ -1201,14 +1458,14 @@ freeCopy() {
             if safeRun cp -uT "$src_path" "$dest_path" \
                  "MSG:  -> V $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
-                ((COUNT_CPY+=1))
+                COUNT_CPY=$((COUNT_CPY + 1))
             fi
         else
             # $dest_path ist eine Datei
             if safeRun cp -u "$src_path" "$dest_path" \
                  "MSG:  -> D $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
-                ((COUNT_CPY+=1))
+                COUNT_CPY=$((COUNT_CPY + 1))
             fi
         fi
     done < "$def_file"
@@ -1260,12 +1517,12 @@ getInstallerTargets() {
     # Zielverzeichnisse ermitteln
     case "$OPT_SCOPE" in
         global)
-            TARGET_BASE="${BASE_GLOBAL}/${PROJECT_NAME}"
+            BASE_TARGET="${BASE_GLOBAL}/${PROJECT_NAME}"
             TARGET_MAN="/usr/share/man"
             TARGET_SYM="/usr/local/bin"
             ;;
         local)
-            TARGET_BASE="${BASE_LOCAL}/${PROJECT_NAME}"
+            BASE_TARGET="${BASE_LOCAL}/${PROJECT_NAME}"
             TARGET_MAN="$HOME/.local/share/man"
             TARGET_SYM="$HOME/.local/bin"
             ;;
@@ -1273,12 +1530,13 @@ getInstallerTargets() {
             showError 1 "Unbekannter Zielbereich, oder Zielbereich nicht definiert: '$OPT_SCOPE'" ;;
     esac
 
-    TARGET_BIN="${TARGET_BASE}/bin"
-    TARGET_LIB="${TARGET_BASE}/lib"
-    TARGET_ETC="${TARGET_BASE}/etc"
+    TARGET_BIN="${BASE_TARGET}/bin"
+    TARGET_LIB="${BASE_TARGET}/lib"
+    TARGET_ETC="${BASE_TARGET}/etc"
     TARGET_MANIFEST="$(getCdeployDir $OPT_SCOPE)/manifests"
+    TARGET_HOOKS="$(getCdeployDir $OPT_SCOPE)/hooks"
 
-    for var in PROJECT_NAME TARGET_BASE TARGET_BIN TARGET_ETC TARGET_LIB TARGET_MAN \
+    for var in PROJECT_NAME BASE_TARGET TARGET_BIN TARGET_ETC TARGET_LIB TARGET_MAN \
                 TARGET_MANIFEST TARGET_SYM; do
         validateVar "$var"
     done
@@ -1288,11 +1546,67 @@ getInstallerTargets() {
 ## Liefert den Pfad zum lokalen/globalen Manifest-Verzeichnis
 ## ---------------------------------------------------------------------
 getCdeployDir() {
-    case "$OPT_SCOPE" in
-    global) echo "/usr/local/share/${_SCRIPT_NAME}" ;;    # Pfad zurückgeben
-    local)  echo "$HOME/.local/share/${_SCRIPT_NAME}" ;;  # Pfad zurückgeben
-    *)      showError 1 "Illegaler Zielbereich: $1" ;;
+    case "$1" in
+        global) echo "/usr/local/share/${_SCRIPT_NAME}" ;;    # Pfad zurückgeben
+        local)  echo "$HOME/.local/share/${_SCRIPT_NAME}" ;;  # Pfad zurückgeben
+        *)      showError 1 "Illegaler Zielbereich: $1" ;;
     esac
+}
+
+
+## Manifestdatei(en) ermitteln. Übergeben werden darf sowohl ein eindeutiger Name, als auch
+## ein Glob, um mehrere Dateien aufeinmal zu suchen.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getManifestContent() {
+    # Parameter:
+    #   $1 = Paketbasisname (z. B. "mypkg" oder "mypkg-*")
+    #   $2 = Scope ("local" oder "global")
+    local manifest_name="$1"
+    local scope="$2"
+    local manifest_path file files_found=0
+
+    # Scope-Text für Fehlermeldungen
+    local scope_str
+    case "$scope" in
+        global) scope_str="global" ;;
+        local)  scope_str="lokal" ;;
+        *)
+            showError 1 "Unbekannter Zielbereich: $scope"
+            return $? ;;
+    esac
+
+    # Basispfad abrufen
+    manifest_path="$(getCdeployDir "$scope")/manifests" || {
+        showError 1 "Es wurde keine ${scope_str}e Installation gefunden."
+        return $?
+    }
+
+    # Übergebene Datei(en) einlesen
+    local file
+
+    if [ "${manifest_name##*.}" = "manifest" ]; then
+        # Exakte Datei auslesen
+        file="$manifest_path/$manifest_name"
+        if [ -f "$file" ]; then
+            readManifestFile "$file"
+            files_found=1
+        fi
+    else
+        # Alle passenden Versionen
+        for file in "$manifest_path"/"${manifest_name}"*.manifest; do
+            [ -f "$file" ] || continue
+            readManifestFile "$file"
+            files_found=1
+        done
+    fi
+
+    # Wenn keine Datei gefunden wurde -> Fehler
+    if [ "$files_found" -eq 0 ]; then
+        showError 1 "Es wurde keine ${scope_str}e Installation von '$manifest_name' gefunden."
+        return $?
+    fi
+
+    return 0
 }
 
 
@@ -1343,7 +1657,7 @@ installManpages() {
             if safeRun cp -u "$manfile" "$target_dir/" \
                  "MSG:  -> $target_dir/$(basename "$manfile").gz"; then
                 safeRun chmod 644 "$target_dir/$(basename "$manfile")"
-                ((COUNT_CPY+=1))
+                COUNT_CPY=$((COUNT_CPY + 1))
                 if safeRun gzip -f "$target_dir/$(basename "$manfile")"; then
                     manifestAppend "$target_dir/$(basename "$manfile".gz)" "man"
                 else
@@ -1418,15 +1732,50 @@ isTrue() {
 ## Konfigurationsdatei einbinden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 loadConfigFile() {
-    local config_file="${PACKAGE}/cdeploy.conf"
+    local config_file="$1"
 
     if [[ -f "$config_file" ]]; then
-        if ! bash -n "$config_file" 2>/dev/null; then
+        if ! "$_SHELL_BIN" -n "$config_file" 2>/dev/null; then
             showError 1 "Die Konfigurationsdatei hat ein ungültiges Format." "$config_file"
         fi
         # shellcheck disable=SC1090
-        source "$config_file"
+        . "$config_file"
     fi
+}
+
+
+## Lädt die bei der Installation gespeicherten Remove-Hooks
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+loadRemoveHooks() {
+    # Abbrechen, wenn die Datei nicht existiert
+    local hook_path;  hook_path="$(getCdeployDir "$OPT_SCOPE")/hooks/${PACKAGE}.hook"
+    [ ! -f "$hook_path" ] && hook_path="${hook_path}.gz"
+    if [ ! -f "$hook_path" ]; then return 0; fi
+
+    local hsh;  hsh="$(getFileHash "$hook_path")"
+    if [ "$hsh" != "$1" ]; then
+        showError 1 "Die gespeicherten Paketinformationen wurden anscheinend manipuliert" \
+                    "und können deshalb nicht verwendet werden!"
+    fi
+
+    # Hook-Datei laden; die Datei kann sowohl gepackt als .gz vorliegen,
+    # als auch ungepackt als .hook
+    case "$hook_path" in
+        *.gz)
+            local tmpfile;  tmpfile="$(mktemp "/tmp/${PACKAGE}.XXXXXX")" || \
+                                showError 1 "Konnte temporäre Datei für Hook nicht erstellen."
+            TMP_OBJECTS+=("$tmpfile")
+            #if safeRun gunzip -c "${hook_path}" > "$tmpfile"; then
+            if gunzip -c "$hook_path" > "$tmpfile"; then
+                loadConfigFile "$tmpfile"
+            else
+                showError 1 "Die Paketinformationen konnten nicht gelesen werden."
+            fi
+            ;;
+        *)
+            loadConfigFile "$hook_path"
+            ;;
+    esac
 }
 
 
@@ -1527,7 +1876,7 @@ makePackageInfo() {
                 showMsg "./$dir"
                 while IFS= read -r f; do
                     showMsg "    $f"
-                    ((total+=1))
+                    total=$((total + 1))
                 done < <(ls -1 "${PACKAGE}/$dir")
                 showMsg ""
             fi
@@ -1568,7 +1917,7 @@ makePackageInfo() {
                     last_target=$target
                 fi
                 showMsg "        $src"
-                ((filecount+=1))
+                filecount=$((filecount + 1))
             done
 
             total=$(( total + filecount ))
@@ -1590,8 +1939,8 @@ makePackageList() {
     local output
 
     output="$(
-    local local_manifests;  local_manifests="$(getCdeployDir local)/manifests"
-    local global_manifests; global_manifests="$(getCdeployDir global)/manifests"
+    local local_manifests;   local_manifests="$(getCdeployDir local)/manifests"
+    local global_manifests;  global_manifests="$(getCdeployDir global)/manifests"
     local counter=0
 
     # Titel und Beschreibung der Aktion ausgeben
@@ -1606,7 +1955,7 @@ makePackageList() {
         for f in "$local_manifests"/*.manifest; do
             [ -e "$f" ] || continue   # wenn kein Manifest existiert
             showMsg "    $(basename "${f%.manifest}")"
-            ((counter+=1))
+            counter=$((counter + 1))
         done
         echo
     else
@@ -1619,7 +1968,7 @@ makePackageList() {
         for f in "$global_manifests"/*.manifest; do
             [ -e "$f" ] || continue
             showMsg "    $(basename "${f%.manifest}")"
-            ((counter+=1))
+            counter=$((counter + 1))
         done
     else
         showMsg "    (keine)"
@@ -1699,7 +2048,7 @@ manifestAppend() {
     fi
 
     # Zeile ins Manifest schreiben
-    fileAppend "$MANIFEST_FILE" "${pname}\t${pversion}\t${filepath}\t${hash}\t${mtime}\t${category}\t${size}"
+    fileAppend "$MANIFEST_FILE" "${filepath}\t${hash}\t${pname}\t${pversion}\t${OPT_SCOPE}\t${mtime}\t${category}\t${size}"
 }
 
 
@@ -1726,10 +2075,11 @@ manifestInit() {
         "###" \
         "# ${_SCRIPT_NAME} v${_SCRIPT_VERSION} – Manifest" \
         "# Projekt...........: ${PROJECT_NAME} v${PROJECT_VERSION}" \
+        "# Zielbereich.......: ${OPT_SCOPE}" \
         "# Installationsdatum: $install_date" \
         "# Quelle/Paket......: $(absPath "$PACKAGE")" \
         "#" \
-        "# Zielpfad\tHash_SHA256\tmtime\tKategorie\tGröße" \
+        "# Zielpfad\tHash_SHA256\tpname\tpversion\tscope\tmtime\tKategorie\tGröße" \
         "###" \
         ""
 }
@@ -1751,11 +2101,11 @@ quit() {
     if [ "$return_code" -lt 255 ] && isTrue "$OPT_DRYRUN"; then
         showMsg "" \
                 "" \
-                "     !!! ============================================================== !!!" \
-                "     !!!  DAS WAR EIN TESTLAUF. ES WURDEN KEINE ÄNDERUNGEN VORGENOMMEN  !!!" \
-                "     !!!                ES WURDEN KEINE DATEIEN KOPIERT                 !!!" \
-                "     !!!               ES WURDE KEIN MANIFEST GESCHRIEBEN               !!!" \
-                "     !!! ============================================================== !!!" \
+                "     !!! ================================================================== !!!" \
+                "     !!!  DIESES WAR EIN TESTLAUF. ES WURDEN KEINE ÄNDERUNGEN VORGENOMMEN.  !!!" \
+                "     !!!        ES WURDEN KEINE DATEIEN HINZUGEFÜGT ODER ENTFERNT.          !!!" \
+                "     !!!                ES WURDE KEIN MANIFEST GESCHRIEBEN.                 !!!" \
+                "     !!! ================================================================== !!!" \
                 "" \
                 ""
     fi
@@ -1768,6 +2118,38 @@ quit() {
 }
 
 
+## Liest eine Manifestdatei und schreibt sie nach stdout der aktuellen Subshell.
+## Leer- und Kommentarzeilen werden ignoriert.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+readManifestFile() {
+    local ws;  ws="$(printf ' \t')"
+    local tmp
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Zeile am Anfang trimmen (Leerzeichen und Tabs entfernen), um Kommentarzeilen
+        # zuverlässig zu erkennen
+        tmp="${line#"${line%%[!"${ws}"]*}"}"
+        case "$tmp" in
+            \#*|"") continue ;;  # Kommentare/Leerzeilen überspringen
+            *) printf '%s\n' "$line" ;;
+        esac
+    done < "$file"
+}
+
+
+## Entfernt das übergeordnete Verzeichnis
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+removeDir() {
+    local directory="$1"
+    if [ -d "$directory" ]; then
+        # Versuchen das Verzeichnis zu entfernen. Evtl. Fehlermeldungen werden unterdrückt,
+        # die sind in diesem Fall uninteressant.
+        rmdir "$directory" 2>/dev/null || true
+        if [ $# -eq 2 ]; then
+            showMsg "$2"
+        fi
+    fi
+}
 ## Speichert die Remove-Hooks (Paket config-Datei) für ein späteres Entfernen des Pakets
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 saveRemoveHooks() {
@@ -1776,7 +2158,7 @@ saveRemoveHooks() {
 
 
     local src_conf="$1"
-        local hook_dir; hook_dir="$(getCdeployDir)/hooks"
+    local hook_dir; hook_dir="$(getCdeployDir "$OPT_SCOPE")/hooks"
     safeRun mkdir -p "$hook_dir" || \
             showError 1 "Verzeichnis für Paketinformationen konnte nicht erstellt werden."
 
@@ -1795,7 +2177,6 @@ saveRemoveHooks() {
     fi
 
     showMsg "Paketinformationen gespeichert."
-    return 0
 }
 
 
@@ -1831,7 +2212,7 @@ safeRun() {
     # kurzzeitig außer Kraft setzen, damit bei einem Fehler die nachfolgenden Dateien
     # noch verarbeitet werden; für nicht verarbeitete Dateien wird eine Fehlermeldung
     # ausgegeben
-    if [ "$OPT_DRYRUN" -eq 0 ]; then
+    if isFalse "$OPT_DRYRUN"; then
         set +e
         output=$($USE_SUDO "${args[@]}" 2>&1)
         status=$?
@@ -1882,7 +2263,7 @@ showError() {
 
     # Fehlercounter anpassen; hat in Sub-Shells keine Auswirkung
     # auf die Haupt-Shell
-    ((COUNT_ERR+=1))
+    COUNT_ERR=$((COUNT_ERR + 1))
 
     if isFalse $OPT_QUIET; then
         # Alle übrigen Parameter als separate Zeilen ausgeben
@@ -1936,7 +2317,7 @@ showHookWarning() {
         "   Wenn Sie das Paket trotzdem verwenden möchten, tippen Sie \"ja\"." \
         "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
 
-    echo -n "   > "; read -r choice
+    echo -n "   > "; IFS= read -r choice
     if [[ "$(toLowercase "$choice")" != "ja" ]]; then
         showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
         quit 2
@@ -1982,7 +2363,7 @@ showTitle() {
 ## Warnmeldung ausgeben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showWarning() {
-    ((COUNT_WRN+=1))
+    COUNT_WRN=$((COUNT_WRN + 1))
 
     if isFalse $OPT_QUIET; then
         # Alle Parameter als separate Zeilen ausgeben
@@ -2013,8 +2394,8 @@ showSyntaxAndExit() {
     showMsg "Syntax: cdeploy help" \
             "        cdeploy create [opt...] <package>" \
             "        cdeploy info [--verbose] [--quiet] <package>" \
-            "        cdeploy install --global|--local <package>" \
-            "        cdeploy remove --global|--local <package>" \
+            "        cdeploy install --global|--local [--use-hooks] <package>" \
+            "        cdeploy remove --global|--local [--use-hooks] [--force] <package>" \
             "        cdeploy version"
 
     quit 255
@@ -2036,7 +2417,7 @@ sudoLogin() {
 
     while true; do
         # Passwort ohne Echo einlesen; bei Strg-C oder EOF liefert read !=0
-        if ! read -rsp "   Bitte geben Sie ihr Kennwort ein (Strg-C zum Abbrechen): " pw; then
+        if ! IFS= read -rsp "   Bitte geben Sie ihr Kennwort ein (Strg-C zum Abbrechen): " pw; then
             if isTrue "$OPT_QUIET"; then echo > /dev/tty; fi
             showMsg "" "" "   (Abbruch durch den Benutzer)" ""
             quit 1
@@ -2132,7 +2513,9 @@ usesInstallHooks() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usesRemoveHooks() {
     isOverridden hookPreRemove && return 0
+    echo "Kein Pre-Remove"
     isOverridden hookPostRemove && return 0
+    echo "Kein Post-Remove"
     return 1
 }
 
@@ -2157,17 +2540,17 @@ versionReadable() {
     ver="$1"
 
     # Major = erstes Paar, Minor = zweites Paar, Patch = drittes Paar
-    major=${ver%????}       # entfernt die letzten 4 Stellen → Major+2 Stellen vom Ende
-    rest=${ver#${major}}    # restliche 4 Stellen
-    minor=${rest%??}        # die ersten 2 davon = Minor
-    patch=${rest#${minor}}  # die letzten 2 = Patch
+    major=${ver%????}           # entfernt die letzten 4 Stellen -> Major+2 Stellen vom Ende
+    rest=${ver#"${major}"}      # restliche 4 Stellen
+    minor=${rest%??}            # die ersten 2 davon = Minor
+    patch=${rest#"${minor}"}    # die letzten 2 = Patch
 
     # führende Nullen entfernen
     major=$(echo "$major" | sed 's/^0*//')
     minor=$(echo "$minor" | sed 's/^0*//')
     patch=$(echo "$patch" | sed 's/^0*//')
 
-    # Wenn leer → 0
+    # Wenn leer -> 0
     major=${major:-0}
     minor=${minor:-0}
     patch=${patch:-0}
