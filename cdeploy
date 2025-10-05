@@ -3,18 +3,45 @@
 
 ###########################################################################################
 ##
-##  cdeploy – Ein einfaches Installationsprogramm
+##  cdeploy – leichtgewichtiges Bash-kompatibles Installationssystem
 ##
 ##  Das Skript wurde als einfaches Hilfstool für Administratoren entwickelt, die häufig
-##  ihre persönlichen Skripte und Daten auf zu wartenden Rechnern installieren müssen.
+##  ihre persönlichen Skripte und Daten auf zu wartenden Rechnern installieren, oder
+##  Rechner einrichten müssen.
 ##
 ##  Features:
 ##  - einfach zu pflegende Installationspakete; bestehen aus gewöhnlichen Verzeichnissen
 ##  - globale (für alle Benutzer) oder lokale Installation
-##  - Aktionen 'install' und 'remove'
+##  - Befehle: install, remove, create, pack, list, info
+##  - Hooks erlauben die individuelle Erweiterung der Befehle install und remove
+##  - Manifestdateien enthalten eine Liste aller installierten Dateien
 ##
-##  Copyright (c) 2025 Christian Dorn
-##  Alle Rechte vorbehalten.
+## ========================================================================================
+##
+##  Dieses Programm steht unter der MIT-Lizenz:
+##
+##  MIT License
+##
+##  Copyright (c) 2025 Christian Dorn <https://github.com/cdorn-de>
+##
+##  Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der
+##  zugehörigen Dokumentationsdateien (die „Software“) erhält, die Erlaubnis erteilt,
+##  uneingeschränkt mit der Software zu handeln, einschließlich und ohne Einschränkung
+##  der Rechte, die Software zu verwenden, zu kopieren, zu modifizieren, zusammenzuführen,
+##  zu veröffentlichen, zu vertreiben, zu unterlizenzieren und/oder zu verkaufen, und
+##  Personen, denen die Software zur Verfügung gestellt wird, diese Rechte zu gewähren,
+##  unter den folgenden Bedingungen:
+##
+##  Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen Kopien oder
+##  wesentlichen Teilen der Software beizulegen.
+##
+##  DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTELLT,
+##  EINSCHLIESSLICH ABER NICHT BESCHRÄNKT AUF DIE GARANTIEN DER MARKTREIFE, DER EIGNUNG
+##  FÜR EINEN BESTIMMTEN ZWECK UND DER NICHTVERLETZUNG. IN KEINEM FALL SIND DIE AUTOREN
+##  ODER URHEBERRECHTSINHABER FÜR ANSPRÜCHE, SCHÄDEN ODER ANDERE HAFTUNGEN VERANTWORTLICH,
+##  SEI ES AUFGRUND EINES VERTRAGS, UNERLAUBTER HANDLUNG ODER ANDERWEITIG, DIE AUS ODER
+##  IM ZUSAMMENHANG MIT DER SOFTWARE ODER DER VERWENDUNG ODER ANDEREN GESCHÄFTEN MIT DER
+##  SOFTWARE ENTSTEHEN.
 ##
 ## ========================================================================================
 ##
@@ -546,8 +573,6 @@ cdeployInstall() {
         ensureLocalPath MANPATH "$HOME/.local/share/man"
     fi
 
-
-    local src dest
 
     # Verzeichnis ./bin kopieren
     src="${PACKAGE}/bin"
@@ -1175,15 +1200,39 @@ cdeploy info ./meinpaket.cdp
 .SH AUTOR
 Christian Dorn <mail@c-dorn.de>
 
-.SH COPYRIGHT
-Copyright (c) 2025 Christian Dorn
-.br
-Alle Rechte vorbehalten.
-
 .SH LIZENZ
-Dieses Projekt wird unter der MIT-Lizenz bereitgestellt.
-.sp
-Die Software darf frei verwendet, kopiert, verändert und verteilt werden, sofern der obige Copyright-Hinweis in allen Kopien enthalten bleibt.
+.LP
+cdeploy ist freie Software. Sie darf unter den Bedingungen der MIT-Lizenz genutzt, kopiert,
+verändert und weitergegeben werden.
+
+.LP
+Copyright (c) 2025 Christian Dorn <https://github.com/cdorn-de>
+
+.LP
+Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der zugehörigen
+Dokumentationsdateien (die „Software“) erhält, die Erlaubnis erteilt, uneingeschränkt mit
+der Software zu handeln, einschließlich und ohne Einschränkung der Rechte, die Software zu
+verwenden, zu kopieren, zu modifizieren, zusammenzuführen, zu veröffentlichen, zu vertreiben,
+zu unterlizenzieren und/oder zu verkaufen, und Personen, denen die Software zur Verfügung
+gestellt wird, diese Rechte zu gewähren, unter den folgenden Bedingungen:
+
+.LP
+Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen Kopien oder
+wesentlichen Teilen der Software beizulegen.
+
+.LP
+DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTELLT,
+EINSCHLIESSLICH ABER NICHT BESCHRÄNKT AUF DIE GARANTIEN DER MARKTREIFE, DER EIGNUNG FÜR
+EINEN BESTIMMTEN ZWECK UND DER NICHTVERLETZUNG. IN KEINEM FALL SIND DIE AUTOREN ODER
+URHEBERRECHTSINHABER FÜR ANSPRÜCHE, SCHÄDEN ODER ANDERE HAFTUNGEN VERANTWORTLICH, SEI ES
+AUFGRUND EINES VERTRAGS, UNERLAUBTER HANDLUNG ODER ANDERWEITIG, DIE AUS ODER IM
+ZUSAMMENHANG MIT DER SOFTWARE ODER DER VERWENDUNG ODER ANDEREN GESCHÄFTEN MIT DER SOFTWARE
+ENTSTEHEN.
+
+.LP
+Die vollständige Lizenz ist in der Datei
+.I LICENSE
+im Quellverzeichnis enthalten.
 
 .SH SIEHE AUCH
 .BR cp (1),
