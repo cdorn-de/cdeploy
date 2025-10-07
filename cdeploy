@@ -18,7 +18,7 @@
 ##
 ## ========================================================================================
 ##
-##  Dieses Programm steht unter der MIT-Lizenz:
+##  Diese Software steht unter der MIT-Lizenz:
 ##
 ##  MIT License
 ##
@@ -114,7 +114,7 @@ readonly _CDEP_PACK_EXT_RE="\\.cdp"  # ...zur Verwendung mit RegEx
 readonly _CDEP_SHELL_BIN="${SHELL:-/bin/sh}"
 
 
-# Hook-API
+# Umgebungsvariablen
 CDEP_PROJECT_NAME="tools"
 CDEP_PROJECT_VERSION=""
 CDEP_PROJECT_CREATOR=""
@@ -1003,7 +1003,7 @@ Es ermöglicht lokale und globale Installationen und verwaltet installierte Date
 
 Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschließlich Standard-Unix-Werkzeuge. Es ist daher vor allem für Administratoren interessant, die es zum Einrichten und Warten von Rechnern verwenden können.
 
-.B PAKETSTRUKTUR
+.I PAKETSTRUKTUR
 .LP
 Die typische Struktur eines cdeploy-Pakets ist wie folgt:
 
@@ -1042,7 +1042,7 @@ Installiert ein Paket aus einem lokalen Verzeichnis, einer lokalen Datei oder ei
 
 Die Funktionalität von \fBinstall\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss. (Siehe auch Option --use-hooks.)
 
-Aktualisiert das Manifest mit allen installierten Dateien inklusive deren Hash-Werten.
+Während der Installation wird eine Manifestdatei erstellt, die alle installierten Dateien inklusive deren Hash-Werten enthält. Das Manifest erleichtert das spätere Entfernen eines Pakets und schützt dabei manuell geänderte Datein.
 .TP
 .B list
 Listet alle installierten Pakete und Versionen auf.
@@ -1085,6 +1085,9 @@ Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer In
 .B --global | -g \fR--- (Befehle: install, remove)
 Führt die Installation oder Entfernung im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
 .TP
+.B --hook-parameters=".." | -p=".." \fR--- (Befehle: install, remove)
+Spezifiziert Parameter für die definierten Hooks. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
+.TP
 .B --local | -l \fR--- (Befehle: install, remove)
 Führt die Operation im benutzerspezifischen Verzeichnis aus.
 .TP
@@ -1111,106 +1114,159 @@ Beantwortet die Sicherheitsabfrage zum Entfernen eines Pakets automatisch mit 'j
 
 .SH DATEIEN
 .TP
-.I ~/.local/PAKET
+~/.local/PAKET
 Standardpfad für lokale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
 .TP
-.I /usr/local/PAKET
+/usr/local/PAKET
 Standardpfad für globale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
 .TP
-.I ~/.local/share/cdeploy
+~/.local/share/cdeploy
 Lokaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
-.I /usr/local/share/cdeploy
+/usr/local/share/cdeploy
 Globaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
-.I @/manifests/MANIFEST
-Einthält die vom Paket installierten Dateien inklusive Prüfsummen.
+@/manifests/MANIFEST
+Einthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = cdeploy-Verzeichnis)
 .TP
-.I @/hooks/HOOKDATEI
-Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat.
+@/hooks/HOOKDATEI
+Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat. (@ = cdeploy-Verzeichnis)
 
 .SH HOOKS
 Hooks sind optionale Shell-Skripte, die von einem Paket implementiert werden können, um den Installations- oder Entfernungsprozess zu erweitern. Die folgenden Hook-Typen werden unterstützt:
 .TP
 .B pre- und post-install
-Wird vor bzw. nach dem Kopieren der Dateien ausgeführt.
+Wird vor bzw. nach der Installation ausgeführt.
 .TP
 .B pre- und post-remove
 Wird vor bzw. nach dem Entfernen eines Pakets ausgeführt.
 .RE
 .sp
 Hooks werden über gespeicherte SHA256-Hashes im Manifest verifiziert.
-.sp
+.br
 Vor der Ausführung erfolgt eine Sicherheitswarnung.
+.LP
+.B HOOK-PARAMETER
+.br
+Über den Parameter \fB--hook-parameters\fR (kurz: \fB-p\fR) lassen sich Parameter speziell für Hooks übergeben, ohne dass diese mit den herkömmlichen Parametern von \fBcdeploy\fR kollidieren können.
+
+Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare definiert werden. Wenn die Werte Leer- oder Sonderzeichen enthalten, müssen sie mit einfachen ('') oder doppelten ("") Anführungszeichen begrenzt werden. Innerhalb einfacher Quotes dürfen doppelte Anführungszeichen vorkommen und umgekehrt. Das Paragraphenzeichen (§) ist als Trenner zwischen Parametern reserviert und darf im Wert nicht vorkommen.
+.sp
+\fIBeispiele\fR
+.nf
+§user=admin
+§desc="Neuer Benutzer"
+§info='erstellt mit "Standardrechten"'
+.fi
+
+.B HOOK-API
+.br
+Für Programmierung von Hooks gibt es verschiedene Hilfsmethoden. Besonders die Methoden zur Ausgabe von Meldungen (\fIcdepShowMessage cdepShowError\fR und \fIcdepShowWarning\fR) sollten verwendet werden, da sie direkt in das Fehlermanagement von \fBcdeploy\fR greifen.
+
+Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen Umgebungsvariablen in Hooks verwendet werden. Sie dienen zur Beschreibung des Pakets und zur Generierung der Installationspfade und Manifest- und Hookdateien.
+.TP
+cdepGetBaseTarget
+Liefert das Basis-Installationsverzeichnis.
+.TP
+cdepShowError\fR <error_code> [message ...]
+Für die Ausgabe von Fehlermeldungen. Der erste Parameter ist ein Fehlercode, darauf folgen beliebig viele Parameter, die jeweils als eigene Textzeile ausgegeben werden. Wenn der Fehlercode \fB<> 0\fR ist, wird das Skript mit diesem Fehlercode beendet.
+.TP
+cdepShowMsg\fR [message ...]
+Für die Ausgabe von normalen Statusmeldungen. Es kann eine beliebige Anzahl Parameter übergeben werden, die jeweils als eigene Textzeile ausgegeben werden.
+.TP
+cdepShowWarning\fR [message ...]
+Für die Ausgabe von Warnungen. Es kann eine beliebige Anzahl Parameter übergeben werden, die jeweils als eigene Textzeile ausgegeben werden.
 
 .SH RÜCKGABEWERTE
 .TP
 0
-Die Operation wurde erfolgreich abgeschlossen.
+Das Skript wurde erfolgreich ausgeführt.
 .TP
 1
 Ein Fehler ist aufgetreten.
 .TP
 2
-Die Operation wurde vom Benutzer abgebrochen.
+Das Skript wurde vom Benutzer abgebrochen.
 
-.SH UMGEBUNGSVARIABLEN
+.SH UMGEBUNGSVARIABLEN & KONSTANTEN
+Konstanten beginnen mit einem Unterstrich (_) und können nicht geändert werden. Die Umgebungsvariablen sollten über die Konfigurationsdatei \fIcdeploy.conf\fR im Installationspaket definiert werden.
 .TP
-.B CDEP_PROJECT_NAME
+_CDEP_SCRIPT_NAME
+Enthält den Namen des Skripts ("cdeploy").
+.TP
+_CDEP_SCRIPT_VERSION
+Enthält die Versionsnummer des Skripts.
+.TP
+_CDEP_PACK_EXT
+Enthält die Extension für Archivdateien (.cdp).
+.TP
+_CDEP_PACK_EXT_RE
+Enthält abenfalls die Extension für Archivdateien, aber in einem Format zur Verwendung mit regulären Ausdrücken.
+.TP
+_CDEP_SHELL_BIN
+Enthält die verwendete Shell.
+.TP
+CDEP_PROJECT_NAME
 Der Name für das Installationspaket.
 .TP
-.B CDEP_PROJECT_VERSION
+CDEP_PROJECT_VERSION
 Die Versionsnummer des Installationspakets.
 .TP
-.B CDEP_PROJECT_CREATOR
+CDEP_PROJECT_CREATOR
 Der Ersteller des Installationspakets.
 .TP
-.B CDEP_PROJECT_URL
+CDEP_PROJECT_URL
 Die Download-URL des Installationspakets.
 .TP
-.B CDEP_PROJECT_COPYRIGHT
+CDEP_PROJECT_COPYRIGHT
 Die Copyright-Information zum Installationspaket.
 .TP
-.B CDEP_PROJECT_DESCRIPTION
+CDEP_PROJECT_DESCRIPTION
 Eine Beschreibung des Installationspakets.
-
 .TP
-.B CDEP_BASE_LOCAL
-Bestimmt das Standardbasisverzeichnis für lokale Installationen.
+CDEP_BASE_LOCAL
+Enthält das Standardbasisverzeichnis für lokale Installationen.
 .TP
-.B CDEP_BASE_GLOBAL
-Bestimmt das Standardbasisverzeichnis für globale Installationen.
+CDEP_BASE_GLOBAL
+Enthält das Standardbasisverzeichnis für globale Installationen.
 
 .SH BEISPIELE
 .TP
-Lokale Installation eines Pakets:
-.EX
 cdeploy install --local ./meinpaket.cdp
+.EX
+Lokale Installation eines Pakets.
 .EE
 .TP
-Globale Installation eines Pakets:
-.EX
 cdeploy install --global ./meinpaket.cdp
+.EX
+Globale Installation eines Pakets.
 .EE
 .TP
-Auflisten aller installierten Pakete:
+cdeploy install --local --hook-parameters="§name='John Doe'
+           $firma="ACME Corp." $alter=42" ./meinpaket.cdp
 .EX
+Installation mit Parametern für einen Hook.
+.EE
+.TP
 cdeploy list
+.EX
+Auflisten aller installierten Pakete.
 .EE
 .TP
-Entfernen eines Pakets. Es muss der Paketname inkl. Paketversion angegeben werden (siehe auch: \fBcdeploy list\fR):
-.EX
 cdeploy remove meinpaket-1.0
+.EX
+Entfernen eines Pakets. Es muss der Paketname inkl. Paketversion
+angegeben werden (siehe auch: \fBcdeploy list\fR).
 .EE
 .TP
-Eine Archivdatei erstellen:
-.EX
 cdeploy pack ./meinarchiv.cdp ./meinpaket
+.EX
+Eine Archivdatei erstellen.
 .EE
 .TP
-Informationen zu einem Paket abfragen:
-.EX
 cdeploy info ./meinpaket.cdp
+.EX
+Informationen zu einem Paket abfragen.
 .EE
 
 .SH AUTOR
@@ -1220,10 +1276,8 @@ Christian Dorn <https://github.com/cdorn-de>
 .LP
 cdeploy ist freie Software. Sie darf unter den Bedingungen der MIT-Lizenz genutzt, kopiert,
 verändert und weitergegeben werden.
-
 .LP
 Copyright (c) 2025 Christian Dorn <https://github.com/cdorn-de>
-
 .LP
 Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der zugehörigen
 Dokumentationsdateien (die „Software“) erhält, die Erlaubnis erteilt, uneingeschränkt mit
@@ -1231,11 +1285,9 @@ der Software zu handeln, einschließlich und ohne Einschränkung der Rechte, die
 verwenden, zu kopieren, zu modifizieren, zusammenzuführen, zu veröffentlichen, zu vertreiben,
 zu unterlizenzieren und/oder zu verkaufen, und Personen, denen die Software zur Verfügung
 gestellt wird, diese Rechte zu gewähren, unter den folgenden Bedingungen:
-
 .LP
 Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen Kopien oder
 wesentlichen Teilen der Software beizulegen.
-
 .LP
 DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTELLT,
 EINSCHLIESSLICH ABER NICHT BESCHRÄNKT AUF DIE GARANTIEN DER MARKTREIFE, DER EIGNUNG FÜR
@@ -1244,7 +1296,6 @@ URHEBERRECHTSINHABER FÜR ANSPRÜCHE, SCHÄDEN ODER ANDERE HAFTUNGEN VERANTWORTL
 AUFGRUND EINES VERTRAGS, UNERLAUBTER HANDLUNG ODER ANDERWEITIG, DIE AUS ODER IM
 ZUSAMMENHANG MIT DER SOFTWARE ODER DER VERWENDUNG ODER ANDEREN GESCHÄFTEN MIT DER SOFTWARE
 ENTSTEHEN.
-
 .LP
 Die vollständige Lizenz ist in der Datei
 .I LICENSE
@@ -1602,7 +1653,7 @@ dirIsEmpty() {
 ## Lädt die angegebene Datei, wenn der Quellpfad eine URL ist. Liefert
 ## den Pfad zur heruntergeladenen Datei oder den orignalen Quellpfad,
 ## wenn dieser keine URL darstellt.
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 downloadIfURL() {
     local pack_url="$1"
 
@@ -1725,9 +1776,8 @@ EOF
 }
 
 
-## Installationspaket für (De-)Installation in ein temporäres
-## Verzeichnis entpacken
-## ---------------------------------------------------------------------
+## Installationspaket für (De-)Installation in ein temporäres Verzeichnis entpacken
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 extractPackage() {
     local archive="$1"
     if [[ "$archive" == "" || "$archive" != *"$_CDEP_PACK_EXT" ]]; then
@@ -1927,7 +1977,8 @@ getInstallerTargets() {
             P_TARGET_SYM="$HOME/.local/bin"
             ;;
         *)
-            cdepShowError 1 "Unbekannter Zielbereich, oder Zielbereich nicht definiert: '$P_OPT_SCOPE'" ;;
+            cdepShowError 1 "Unbekannter Zielbereich, oder Zielbereich nicht definiert: '$P_OPT_SCOPE'"
+            ;;
     esac
 
     P_TARGET_BIN="${P_BASE_TARGET}/bin"
@@ -2230,7 +2281,7 @@ loadRemoveHooks() {
 ## Erstellt einen Key-Value-Eintrag für eine Konfigurationsdatei.
 ## Wenn die übergebene Variable leer ist, wird der Eintrag als Kommentar
 ## angelegt, ansonsten als aktive Zeile.
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makeConfigLine() {
     local varname="$1"
     local value="$2"
@@ -2441,7 +2492,7 @@ makePackageList() {
 ## ausführbar zu machen.
 ## 'dest_dir' sollte abhängig vom Scope entweder /usr/local/bin oder
 ## ~/.local/bin sein.
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makeSymlinks() {
     local src_dir="$1"
     local dest_dir="$2"
@@ -2501,7 +2552,6 @@ manifestAppend() {
 
 
 ## Manifest-Datei anlegen
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 manifestInit() {
     # Bei Testläufen wird kein Manifest geschrieben; abbrechen
@@ -2704,7 +2754,7 @@ showBottomLine() {
 
 
 ## Eine Warnmeldung ausgeben, wenn ein Paket Hooks definiert
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showHookWarning() {
     if isTrue "$P_OPT_USEHOOKS"; then
         cdepShowMsg "DIE VERWENDUNG VON SKRIPTERWEITERUNGEN (\"HOOKS\") WURDE AKTIVIERT." "" ""
@@ -2854,7 +2904,7 @@ toUppercase() {
 
 
 ## Gibt Eingabe durch less, more oder cat aus – je nach Umgebung
-## ---------------------------------------------------------------------
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usePager() {
     if isTrue "$P_USE_PAGER"; then
         # interaktiv: Ausgabe an Terminal
