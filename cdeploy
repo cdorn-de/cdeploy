@@ -138,6 +138,7 @@ OPT_QUIET=0
 OPT_SCOPE=""
 OPT_USEHOOKS=0
 OPT_VERBOSE=0
+OPT_YES=0
 OUTPUT=""
 OUTPUT_FORMATTED=1
 PACKAGE=""
@@ -395,6 +396,10 @@ parseParameters() {
                 assertAction version create
                 assertIsEmpty "projektversion" "$PROJECT_VERSION"
                 PROJECT_VERSION="${arg#*=}" ;;
+            --yes|-y)
+                assertAction yes remove
+                assertIsFalse "yes" $OPT_YES
+                OPT_YES=1 ;;
             *)  # Alle anderen Optionen sind unbekannt! Syntax anzeigen und abbrechenl
                 showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
         esac
@@ -727,8 +732,8 @@ cdeployRemove() {
     local scope_str;  [[ "$OPT_SCOPE" == "global" ]] \
                         && scope_str="global" || scope_str="lokal"
 
-    showMsg "" \
-            "Entferne ${scope_str}e Installation von Paket '${PACKAGE}'." \
+    showMsg "Entferne ${scope_str}e Installation von Paket '${PACKAGE}'." \
+            "" \
             ""
 
 
@@ -736,7 +741,7 @@ cdeployRemove() {
     local manifest_file;  manifest_file="$(getCdeployDir "$OPT_SCOPE")/manifests/${PACKAGE}.manifest"
     local hook_file;  hook_file="$(getCdeployDir "$OPT_SCOPE")/hooks/${PACKAGE}.hook"
 
-    # Manifestdatei ermitteln
+    # Manifestdatei einlesen
     local manifest
     if ! manifest="$(getManifestContent "$PACKAGE".manifest "$OPT_SCOPE")"; then
         showError 1 "Es wurde keine ${scope_str}e Installation von '${PACKAGE}' gefunden." \
@@ -745,23 +750,25 @@ cdeployRemove() {
 
 
     # Sicherheitsabfrage und ggf. Bestätigung
-    showMsg "" \
-            "   Möchten Sie die ${scope_str}e Installation von '${PACKAGE}'" \
-            "   wirklich entfernen? Dieser Vorgang kann nicht widerrufen werden!" \
-            "" \
-            "   Wenn Sie das Paket entfernen möchten, tippen Sie \"ja\"." \
-            "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
-    printf  '   > '; IFS= read -r choice
-    if [ "$(toLowercase "$choice")" != "ja" ]; then
-        showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
-        quit 2
-    fi
+    if isFalse "$OPT_YES"; then
+        showMsg "" \
+                "   Möchten Sie die ${scope_str}e Installation von '${PACKAGE}'" \
+                "   wirklich entfernen? Dieser Vorgang kann nicht widerrufen werden!" \
+                "" \
+                "   Wenn Sie das Paket entfernen möchten, tippen Sie \"ja\"." \
+                "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
+        printf  '   > '; IFS= read -r choice
+        if [ "$(toLowercase "$choice")" != "ja" ]; then
+            showMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
+            quit 2
+        fi
 
-    showMsg "" \
-            "" \
-            "   (Paket '${PACKAGE}' wird entfernt.)" \
-            "" \
-            ""
+        showMsg "" \
+                "" \
+                "   (Paket '${PACKAGE}' wird entfernt.)" \
+                "" \
+                ""
+    fi
 
 
     # Gespeicherte Paketinformation inkl. Remove-Hooks auslesen; dazu brauchen wir den Hash
@@ -1091,6 +1098,9 @@ Gibt zusätzlich zu den Metadaten eines Pakets auch alle enthaltenen Dateien und
 .TP
 .B --version=".." \fR--- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets die Paketversion ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
+.B --yes | -y \fR--- (Befehl: remove)
+Beantwortet die Sicherheitsabfrage zum Entfernen eines Pakets automatisch mit 'ja'. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 
 
 .SH DATEIEN
