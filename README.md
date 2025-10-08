@@ -48,7 +48,6 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 
 
-
 ### Installationsablauf
 
 1. Parameterprüfung
@@ -59,7 +58,6 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 6. Paketdateien kopieren (nur Ältere ersetzen durch `cp -u`)
 7. PostInstall-Hook ausführen
 8. Cleanup temporärer Dateien
-
 
 
 
@@ -193,6 +191,8 @@ Hooks erweitern die Funktionalität eines Pakets, z. B. durch eigene Aktionen vo
 cdeploy install -p="§user='demo' §password="Das Passwort ist 'secret'!" ..."
 ```
 
+Das Paragraphenzeichen (`§`) wurde als Markierung für den Schlüssel gewählt, weil es einerseits im Standard ASCII-Breich liegt, es andererseits aber relativ selten verwendet wird und unter POSIX/Bash keine besondere Bedeutung hat.
+
 Hooks können die Werte von Hook-Parametern mit der Funktion `cdepGetHookParameter` abrufen. Die Methode erwartet als ersten Parameter den Schlüssel. Im optionalen zweiten Methoden-Parameter kann ein Standardwert übergeben werden, für den Fall dass der Hook-Parameter nicht übergeben wurde. Wenn kein Standardwert übergeben wird, liefert die Methode stattdessen einen leeren String.
 
 ```bash
@@ -270,7 +270,7 @@ Dieses Projekt steht unter der MIT-Lizenz. Die vollständige Lizenz befindet sic
 
 MIT License
 
-Copyright (c) 2025 Christian Dorn <https://github.com/cdorn-de>
+Copyright © 2025 Christian Dorn <https://github.com/cdorn-de>
 
 Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der zugehörigen Dokumentationsdateien (die „Software“) erhält, die Erlaubnis erteilt, uneingeschränkt mit der Software zu handeln, einschließlich und ohne Einschränkung der Rechte, die Software zu verwenden, zu kopieren, zu modifizieren, zusammenzuführen, zu veröffentlichen, zu vertreiben, zu unterlizenzieren und/oder zu verkaufen, und Personen, denen die Software zur Verfügung gestellt wird, diese Rechte zu gewähren, unter den folgenden Bedingungen:
 
