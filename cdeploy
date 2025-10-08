@@ -888,7 +888,7 @@ EOF
         # Datei entfernen
         if isTrue "$P_OPT_DRYRUN"; then
             cdepShowMsg "  X  $m_filepath"
-        elif safeRun rm -f "$m_filepath"; then
+        elif cdepSafeRun rm -f "$m_filepath"; then
             cdepShowMsg "  X  $m_filepath"
             removeDir "$(dirname "$m_filepath")"
         else
@@ -916,9 +916,9 @@ EOF
     else
         echo
         [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
-        safeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
+        cdepSafeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
         removeDir "$P_TARGET_HOOKS"
-        safeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
+        cdepSafeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
         removeDir "$P_TARGET_MANIFEST"
         removeDir "$(getCdeployDir "$P_OPT_SCOPE")"
         removeDir "$P_BASE_TARGET" "  X  PROJEKTVERZEICHNIS $P_BASE_TARGET"
@@ -1168,6 +1168,14 @@ Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen U
 cdepGetBaseTarget
 Liefert das Basis-Installationsverzeichnis.
 .TP
+cdepGetHookParameter\fR <name> [default]
+Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
+.TP
+cdepSafeRun\fR <command> ['MSG:'<success_message]
+Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig, und es beim Skriptstart erfolgreich aktiviert wurde. Gibt bei Fehlern automatisch eine Fehlermeldung aus. Die Methode beendet bei einem Fehler \fInicht\fR automatisch das Skript, sondern gibt einen Returncode ungleich 0 zurück.
+.br
+Optional kann im letzten Parameter eine Meldung übergeben werden, die angezeigt wird, wenn die Anweisung erfolgreich ausgeführt wurde. Dieser Parameter muss mit der Zeichenfolge 'MSG:' beginnen.
+.TP
 cdepShowError\fR <error_code> [message ...]
 Für die Ausgabe von Fehlermeldungen. Der erste Parameter ist ein Fehlercode, darauf folgen beliebig viele Parameter, die jeweils als eigene Textzeile ausgegeben werden. Wenn der Fehlercode \fB<> 0\fR ist, wird das Skript mit diesem Fehlercode beendet.
 .TP
@@ -1364,6 +1372,113 @@ commandShowVersionAndExit() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdepGetBaseTarget() {
     echo "$P_BASE_TARGET"
+}
+
+
+## Liefert den Wert eines Hook-Parameters, bzw. ein Default (2. Methoden-Parameter), wenn
+## der Hook-Parameter nicht existiert
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdepGetHookParameter() {
+    local key="$1"
+    local default=""
+    local name=""
+    local result=""
+    local part=""
+    local rest="$P_HOOK_PARAMETERS"
+
+    if [ $# -gt 1 ]; then
+        default="$2"
+    fi
+
+    while [ -n "$rest" ]; do
+        case "$rest" in
+            §*=*)
+                part=${rest#§}     # alles nach ?
+                name=${part%%=*}    # bis '='
+                if [ "$name" != "$key" ]; then
+                    rest=${part#*=}  # Rest trotzdem weitergeben
+                    continue
+                fi
+
+                rest=${part#*=}     # Rest nach '='
+                case "$rest" in
+                    \'*\') val=${rest#\'}; val=${val%%\'*}; rest=${rest#*\'} ;;
+                    \"*\") val=${rest#\"}; val=${val%%\"*}; rest=${rest#*\"} ;;
+                    §*)    val=${rest%%§*}; rest="?${rest#*§}" ;;
+                    *)     val=$rest; rest= ;;
+                esac
+                if [ "$name" = "$key" ]; then
+                    result=$val
+                    break
+                fi
+                ;;
+            *)
+                val="$default"
+                break
+                ;;
+        esac
+    done
+
+    printf '%s' "$result"
+}
+
+
+## Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig und beim Skriptstart
+## erfolgreich aktiviert. Gibt bei Fehlern automatisch eine Fehlermeldung aus. Die Methode
+## beendet bei einem Fehler nicht(!) automatisch das Skript, sondern gibt einen Returncode
+## ungleich 0 zurück.
+## Optional kann im letzten Parameter eine Meldung übergeben werden, die angezeigt wird,
+## wenn die Anweisung erfolgreich ausgeführt wurde. Dieser Parameter muss mit der Zeichen-
+## folge 'MSG:' beginnen.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdepSafeRun() {
+    local args=("$@")
+    local msg=""
+    local output
+    local status=0
+
+    # Optional: Den letzten Parameter als Meldung verwenden, wenn er mit 'MSG:' beginnt.
+    #           Anschließend den letzten Parameter entfernen.
+    if [[ "${args[-1]}" == MSG:* ]]; then
+        msg="${args[-1]#MSG:}"   # entfernt das Präfix
+        unset 'args[-1]'         # entfernt letzten Parameter aus dem Befehl
+    fi
+
+    # Das letze Argument ist (jetzt) der Zielpfad. Falls er mit einer Tile beginnt, diese
+    # durch den absoluten Pfad zum Benutzerverzeichnis ersetzen.
+    local target="${args[-1]}"
+    [[ "$target" == ~* ]] && target="${target/#\~/$HOME}"
+
+    # Prüfen ob die sudo-Anmeldung noch gültig ist; ein erneutes Login aber nur durchführen,
+    # wenn beim Start des Skriptes schon eine Anmeldung erfolgreich war
+    if [[ "$P_USE_SUDO" == "sudo" ]] && ! sudo -n true; then
+        cdepShowMsg "   Die Administratorrechte sind abgelaufen. Bitte melden Sie sich erneut an."
+        sudoLogin
+    fi
+
+    # Befehl ausführen; dazu das Abbruchkriterium -e (abbrechen, wenn Returncode ≠ 0)
+    # kurzzeitig außer Kraft setzen, damit bei einem Fehler die nachfolgenden Dateien
+    # noch verarbeitet werden; für nicht verarbeitete Dateien wird eine Fehlermeldung
+    # ausgegeben
+    if isFalse "$P_OPT_DRYRUN"; then
+        set +e
+        output=$($P_USE_SUDO "${args[@]}" 2>&1)
+        status=$?
+        set -e
+    fi
+
+    # Fehler ausgeben, falls der Befehl fehlgeschlagen ist, und den Returncode des Befehls
+    # zurückgeben.
+    if [ "$status" -ne 0 ]; then
+        local err_msg="${output##*:}"
+        cdepShowError 0 "${err_msg#"${err_msg%%[! ]*}"}"
+        return $status
+    fi
+
+    # Wenn als letzter Parameter eine Meldung übergeben wurde (s.o.), muss diese jetzt
+    # ausgegeben werden
+    if [[ -n "$msg" ]]; then cdepShowMsg "$msg"; fi
+    return 0
 }
 
 
@@ -1609,12 +1724,12 @@ copyFiles() {
 
     if [ -d "$src_dir" ]; then
         shopt -s nullglob
-        safeRun mkdir -p "$dest_dir"
+        cdepSafeRun mkdir -p "$dest_dir"
 
         for f in "$src_dir"/*; do
             [ -f "$f" ] || continue
-            if safeRun cp -u "$f" "$dest_dir/"; then
-                safeRun chmod 755 "$dest_dir/$(basename "$f")" \
+            if cdepSafeRun cp -u "$f" "$dest_dir/"; then
+                cdepSafeRun chmod 755 "$dest_dir/$(basename "$f")" \
                     "MSG:  -> $dest_dir/$(basename "$f")"
                 manifestAppend "$dest_dir/$(basename "$f")" "$category"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
@@ -1672,7 +1787,7 @@ downloadIfURL() {
         # temporäre Datei oder Verzeichnis
         local tmpfile;  tmpfile=$(mktemp "/tmp/cdeploy_pkg.XXXXXX${_CDEP_PACK_EXT}") || \
                 cdepShowError 1 "Temporäre Datei konnte nicht angelegt werden."; return $?
-        safeRun curl -fsSL "$pack_url" -o "$tmpfile" || \
+        cdepSafeRun curl -fsSL "$pack_url" -o "$tmpfile" || \
                 cdepShowError 1 "Download fehlgeschlagen."; return $?
         P_TMP_OBJECTS+=("$tmpfile")
 
@@ -1710,7 +1825,7 @@ ensureLocalPath() {
     # enthält, wird das Skript mit einer Fehlermdelung abgebrochen.
     # Wenn der Pfad ok ist, wird er angelegt, falls er noch nicht existiert.
     [[ "$target" == *:* ]] && cdepShowError 1 "Pfade mit Doppelpunkt (':') werden nicht unterstützt."
-    [ -d "$target" ] || safeRun mkdir -p "$target"
+    [ -d "$target" ] || cdepSafeRun mkdir -p "$target"
 
     # Aktuellen Wert der Umgebungsvariablen ermitteln, falls vorhanden
     local current_value=""
@@ -1845,7 +1960,7 @@ finalCleanup() {
 
     # Temporäre Dateien/Verzeichnisse entfernen
     for p in "${P_TMP_OBJECTS[@]}"; do
-        [[ -e $p ]] && safeRun rm -rf -- "$p"
+        [[ -e $p ]] && cdepSafeRun rm -rf -- "$p"
     done
 
     # Verwendung von sudo deaktivieren
@@ -1896,23 +2011,23 @@ freeCopy() {
         [[ "$dest_path" == ~* ]] && dest_path="${dest_path/#\~/$HOME}"
         if [ ! -e "$dest_path" ]; then
             if [[ "$dest_path" == */ ]]; then
-                safeRun mkdir -p "$dest_path"
+                cdepSafeRun mkdir -p "$dest_path"
             else
-                safeRun mkdir -p "$(dirname "$dest_path")"
+                cdepSafeRun mkdir -p "$(dirname "$dest_path")"
             fi
         fi
 
         # Datei aus dem Paket in das Ziel kopieren
         if [ -d "$dest_path" ] || [[ "$dest_path" == */ ]]; then
             # $dest_path ist ein Verzeichnis
-            if safeRun cp -uT "$src_path" "$dest_path" \
+            if cdepSafeRun cp -uT "$src_path" "$dest_path" \
                  "MSG:  -> V $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
             fi
         else
             # $dest_path ist eine Datei
-            if safeRun cp -u "$src_path" "$dest_path" \
+            if cdepSafeRun cp -u "$src_path" "$dest_path" \
                  "MSG:  -> D $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
@@ -2002,54 +2117,6 @@ getCdeployDir() {
         local)  echo "$HOME/.local/share/${_CDEP_SCRIPT_NAME}" ;;  # Pfad zurückgeben
         *)      cdepShowError 1 "Illegaler Zielbereich: $1" ;;
     esac
-}
-
-
-## Liefert den Wert eines Hook-Parameters, bzw. ein Default (2. Methoden-Parameter), wenn
-## der Hook-Parameter nicht existiert
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-getHookParam() {
-    local key="$1"
-    local default=""
-    local name=""
-    local result=""
-    local part=""
-    local rest="$P_HOOK_PARAMETERS"
-
-    if [ $# -gt 1 ]; then
-        default="$2"
-    fi
-
-    while [ -n "$rest" ]; do
-        case "$rest" in
-            §*=*)
-                part=${rest#§}     # alles nach ?
-                name=${part%%=*}    # bis '='
-                if [ "$name" != "$key" ]; then
-                    rest=${part#*=}  # Rest trotzdem weitergeben
-                    continue
-                fi
-
-                rest=${part#*=}     # Rest nach '='
-                case "$rest" in
-                    \'*\') val=${rest#\'}; val=${val%%\'*}; rest=${rest#*\'} ;;
-                    \"*\") val=${rest#\"}; val=${val%%\"*}; rest=${rest#*\"} ;;
-                    §*)    val=${rest%%§*}; rest="?${rest#*§}" ;;
-                    *)     val=$rest; rest= ;;
-                esac
-                if [ "$name" = "$key" ]; then
-                    result=$val
-                    break
-                fi
-                ;;
-            *)
-                val="$default"
-                break
-                ;;
-        esac
-    done
-
-    printf '%s' "$result"
 }
 
 
@@ -2152,12 +2219,12 @@ installManpages() {
             [ -f "$manfile" ] || continue
             section="${manfile##*.}"
             target_dir="$dest_dir/man$section"
-            safeRun mkdir -p "$target_dir"
-            if safeRun cp -u "$manfile" "$target_dir/" \
+            cdepSafeRun mkdir -p "$target_dir"
+            if cdepSafeRun cp -u "$manfile" "$target_dir/" \
                  "MSG:  -> $target_dir/$(basename "$manfile").gz"; then
-                safeRun chmod 644 "$target_dir/$(basename "$manfile")"
+                cdepSafeRun chmod 644 "$target_dir/$(basename "$manfile")"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
-                if safeRun gzip -f "$target_dir/$(basename "$manfile")"; then
+                if cdepSafeRun gzip -f "$target_dir/$(basename "$manfile")"; then
                     manifestAppend "$target_dir/$(basename "$manfile".gz)" "man"
                 else
                     manifestAppend "$target_dir/$(basename "$manfile"*)" "man"
@@ -2264,7 +2331,7 @@ loadRemoveHooks() {
             local tmpfile;  tmpfile="$(mktemp "/tmp/${P_PACKAGE}.XXXXXX")" || \
                                 cdepShowError 1 "Konnte temporäre Datei für Hook nicht erstellen."
             P_TMP_OBJECTS+=("$tmpfile")
-            #if safeRun gunzip -c "${hook_path}" > "$tmpfile"; then
+            #if cdepSafeRun gunzip -c "${hook_path}" > "$tmpfile"; then
             if gunzip -c "$hook_path" > "$tmpfile"; then
                 loadConfigFile "$tmpfile"
             else
@@ -2499,11 +2566,11 @@ makeSymlinks() {
     local dest_file
 
     if [ -d "$src_dir" ]; then
-        safeRun mkdir -p "$dest_dir"
+        cdepSafeRun mkdir -p "$dest_dir"
         for f in "$src_dir"/*; do
             [ -f "$f" ] || continue
             dest_file="$dest_dir/$(basename "$f")"
-            safeRun ln -sf "$f" "$dest_file" \
+            cdepSafeRun ln -sf "$f" "$dest_file" \
                  "MSG:     -> $dest_file -> $f"
             manifestAppend "$dest_file" "link"
         done
@@ -2559,11 +2626,11 @@ manifestInit() {
 
 
     # Bestimmen der Manifestdatei
-    safeRun mkdir -p "$P_TARGET_MANIFEST"
+    cdepSafeRun mkdir -p "$P_TARGET_MANIFEST"
 
     P_MANIFEST_FILE="${P_TARGET_MANIFEST}/$(getProjectInfo -).manifest"
     if [ -f "$P_MANIFEST_FILE" ]; then
-        safeRun rm "$P_MANIFEST_FILE"
+        cdepSafeRun rm "$P_MANIFEST_FILE"
     fi
 
     # Header schreiben
@@ -2657,7 +2724,7 @@ saveRemoveHooks() {
 
     local src_conf="$1"
     local hook_dir; hook_dir="$(getCdeployDir "$P_OPT_SCOPE")/hooks"
-    safeRun mkdir -p "$hook_dir" || \
+    cdepSafeRun mkdir -p "$hook_dir" || \
             cdepShowError 1 "Verzeichnis für Paketinformationen konnte nicht erstellt werden."
 
     # Zieldatei z. B. "mypackage-1.0.hook"
@@ -2666,69 +2733,15 @@ saveRemoveHooks() {
 
     # config-Datei (cdeploy.conf) kopieren und zip-en;
     # Datei ins Manifest aufnehmen
-    safeRun cp "$src_conf" "$hook_path" || \
+    cdepSafeRun cp "$src_conf" "$hook_path" || \
             cdepShowError 1 "Paketinformationen konnten nicht gespeichert werden."
-    if safeRun gzip -f "$hook_path"; then
+    if cdepSafeRun gzip -f "$hook_path"; then
         manifestAppend "${hook_path}.gz" "hook"
     else
         manifestAppend "${hook_path}" "hook"
     fi
 
     cdepShowMsg "Paketinformationen gespeichert."
-}
-
-
-## Anweisung sicher ausführen; automatisch sudo-Berechtigung verwenden,
-## wenn nötig; bei Fehler Meldung ausgeben und Fehlercode zurückgeben
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-safeRun() {
-    local args=("$@")
-    local msg=""
-    local output
-    local status=0
-
-    # Optional: Den letzten Parameter als Meldung verwenden, wenn er mit 'MSG:' beginnt.
-    #           Anschließend den letzten Parameter entfernen.
-    if [[ "${args[-1]}" == MSG:* ]]; then
-        msg="${args[-1]#MSG:}"   # entfernt das Präfix
-        unset 'args[-1]'         # entfernt letzten Parameter aus dem Befehl
-    fi
-
-    # Das letze Argument ist (jetzt) der Zielpfad. Falls er mit einer Tile beginnt, diese
-    # durch den absoluten Pfad zum Benutzerverzeichnis ersetzen.
-    local target="${args[-1]}"
-    [[ "$target" == ~* ]] && target="${target/#\~/$HOME}"
-
-    # Prüfen ob die sudo-Anmeldung noch gültig ist; ein erneutes Login aber nur durchführen,
-    # wenn beim Start des Skriptes schon eine Anmeldung erfolgreich war
-    if [[ "$P_USE_SUDO" == "sudo" ]] && ! sudo -n true; then
-        cdepShowMsg "   Die Administratorrechte sind abgelaufen. Bitte melden Sie sich erneut an."
-        sudoLogin
-    fi
-
-    # Befehl ausführen; dazu das Abbruchkriterium -e (abbrechen, wenn Returncode ≠ 0)
-    # kurzzeitig außer Kraft setzen, damit bei einem Fehler die nachfolgenden Dateien
-    # noch verarbeitet werden; für nicht verarbeitete Dateien wird eine Fehlermeldung
-    # ausgegeben
-    if isFalse "$P_OPT_DRYRUN"; then
-        set +e
-        output=$($P_USE_SUDO "${args[@]}" 2>&1)
-        status=$?
-        set -e
-    fi
-
-    # Fehler ausgeben, falls der Befehl fehlgeschlagen ist, und den Returncode des Befehls
-    # zurückgeben.
-    if [ "$status" -ne 0 ]; then
-        local err_msg="${output##*:}"
-        cdepShowError 0 "${err_msg#"${err_msg%%[! ]*}"}"
-        return $status
-    fi
-
-    # Wenn als letzter Parameter eine Meldung übergeben wurde (s.o.), muss diese jetzt
-    # ausgegeben werden
-    if [[ -n "$msg" ]]; then cdepShowMsg "$msg"; fi
-    return 0
 }
 
 
