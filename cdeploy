@@ -466,7 +466,7 @@ commandCreate() {
 ## Projektdaten
 ## ==========
 
-## Projektname, wird u.a. zur Benennung des Zielordners verwendet.
+## Projektname, wird u.a. zur Benennung des Zielverzeichnisses verwendet.
 $(makeConfigLine "CDEP_PACKAGE_NAME" "$CDEP_PACKAGE_NAME")
 
 ## Projektversion, wird für die Verwaltung der Installationen benötigt.
@@ -1121,10 +1121,10 @@ Standardpfad für lokale Installationen. Kann über die Paket-Konfigurationsdate
 Standardpfad für globale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
 .TP
 ~/.local/share/cdeploy
-Lokaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+Lokales Verzeichnis mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
 /usr/local/share/cdeploy
-Globaler Ordner mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+Globales Verzeichnis mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
 @/manifests/MANIFEST
 Einthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = cdeploy-Verzeichnis)
@@ -1174,7 +1174,7 @@ Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters).
 cdepGetPackageInfo\fr [divider]
 Liefert den Paketnamen zusammen mit der Versionsnummer. Der Optionale Parameter \fIdivider\fR definiert das Trennzeichen zwischen beiden Angaben. Standardmäßig wird ein Bindestrich (`-`) verwendet.
 .TP
-cdepSafeRun\fR <command> ['MSG:'<success_message]
+cdepSafeRun\fR <command> ['MSG:'<success_message>]
 Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig, und es beim Skriptstart erfolgreich aktiviert wurde. Gibt bei Fehlern automatisch eine Fehlermeldung aus. Die Methode beendet bei einem Fehler \fInicht\fR automatisch das Skript, sondern gibt einen Returncode ungleich 0 zurück.
 .br
 Optional kann im letzten Parameter eine Meldung übergeben werden, die angezeigt wird, wenn die Anweisung erfolgreich ausgeführt wurde. Dieser Parameter muss mit der Zeichenfolge 'MSG:' beginnen.
@@ -1689,9 +1689,9 @@ checkPackage() {
 ## abfragen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 checkPermissions() {
-    # Wenn die Installation global erfolgt, prüfen wir zuerst die Ordner ./bin, ./etc,
-    # ./lib und ./man. Wenn in einem dieser Verzeichnisse Dateien sind, Kennwort abfragen
-    # und Prüfung beenden.
+    # Wenn die Installation global erfolgt, prüfen wir zuerst die Verzeichnisse ./bin,
+    # ./etc, ./lib und ./man. Wenn in einem dieser Verzeichnisse Dateien sind, Kennwort
+    # abfragen und Prüfung beenden.
     if [[ $P_OPT_SCOPE == "global" ]]; then
         for d in "$P_TARGET_BIN" "$P_TARGET_LIB" "$P_TARGET_ETC" "$P_TARGET_MAN"; do
             if ! dirIsEmpty "$d"; then
