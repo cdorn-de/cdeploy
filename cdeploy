@@ -115,12 +115,12 @@ readonly _CDEP_SHELL_BIN="${SHELL:-/bin/sh}"
 
 
 # Umgebungsvariablen
-CDEP_PROJECT_NAME="tools"
-CDEP_PROJECT_VERSION=""
-CDEP_PROJECT_CREATOR=""
-CDEP_PROJECT_URL=""
-CDEP_PROJECT_COPYRIGHT=""
-CDEP_PROJECT_DESCRIPTION=""
+CDEP_PACKAGE_NAME="tools"
+CDEP_PACKAGE_VERSION=""
+CDEP_PACKAGE_CREATOR=""
+CDEP_PACKAGE_URL=""
+CDEP_PACKAGE_COPYRIGHT=""
+CDEP_PACKAGE_DESCRIPTION=""
 CDEP_BASE_GLOBAL="/usr/local"
 CDEP_BASE_LOCAL="$HOME/.local"
 
@@ -290,7 +290,7 @@ parseParameters() {
             esac
             P_PACKAGE_INPUT="$P_PACKAGE"      # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
             P_PACKAGE_SOURCE="$P_PACKAGE"     # zur Berechnung des Hash
-            CDEP_PROJECT_NAME="${P_PACKAGE%-*}" # Versionsnummer für Projektnamen entfernen
+            CDEP_PACKAGE_NAME="${P_PACKAGE%-*}" # Versionsnummer für Projektnamen entfernen
             set -- "${@:1:$(($#-1))}"         # letzten Parameter entfernen
             ;;
         *)
@@ -349,16 +349,16 @@ parseParameters() {
                 P_OPT_COMPRESSED=1 ;;
             --copyright=*)
                 assertAction copyright create
-                assertIsEmpty "copyright" "$CDEP_PROJECT_COPYRIGHT"
-                CDEP_PROJECT_COPYRIGHT="${arg#*=}" ;;
+                assertIsEmpty "copyright" "$CDEP_PACKAGE_COPYRIGHT"
+                CDEP_PACKAGE_COPYRIGHT="${arg#*=}" ;;
             --creator=*)
                 assertAction creator create
-                assertIsEmpty "creator" "$CDEP_PROJECT_CREATOR"
-                CDEP_PROJECT_CREATOR="${arg#*=}" ;;
+                assertIsEmpty "creator" "$CDEP_PACKAGE_CREATOR"
+                CDEP_PACKAGE_CREATOR="${arg#*=}" ;;
             --description=*)
                 assertAction description create
-                assertIsEmpty "description" "$CDEP_PROJECT_DESCRIPTION"
-                CDEP_PROJECT_DESCRIPTION="${arg#*=}" ;;
+                assertIsEmpty "description" "$CDEP_PACKAGE_DESCRIPTION"
+                CDEP_PACKAGE_DESCRIPTION="${arg#*=}" ;;
             --dry-run|-d)
                 assertAction "dry run" install remove
                 assertIsFalse "dry run" $P_OPT_DRYRUN
@@ -385,15 +385,15 @@ parseParameters() {
                 P_OPT_SCOPE="local" ;;
             --name=*)
                 assertAction name create
-                CDEP_PROJECT_NAME="${arg#*=}" ;;
+                CDEP_PACKAGE_NAME="${arg#*=}" ;;
             --quiet|-q)
                 # für alle Aktionen erlaubt!
                 assertIsFalse "quiet" $P_OPT_QUIET
                 P_OPT_QUIET=1 ;;
             --url=*)
                 assertAction url create
-                assertIsEmpty "url" "$CDEP_PROJECT_URL"
-                CDEP_PROJECT_URL="${arg#*=}" ;;
+                assertIsEmpty "url" "$CDEP_PACKAGE_URL"
+                CDEP_PACKAGE_URL="${arg#*=}" ;;
             --use-hooks|-u)
                 assertAction "use hooks" install remove
                 assertIsFalse "use hooks" $P_OPT_USEHOOKS
@@ -404,8 +404,8 @@ parseParameters() {
                 P_OPT_VERBOSE=1 ;;
             --version=*)
                 assertAction version create
-                assertIsEmpty "projektversion" "$CDEP_PROJECT_VERSION"
-                CDEP_PROJECT_VERSION="${arg#*=}" ;;
+                assertIsEmpty "projektversion" "$CDEP_PACKAGE_VERSION"
+                CDEP_PACKAGE_VERSION="${arg#*=}" ;;
             --yes|-y)
                 assertAction yes remove
                 assertIsFalse "yes" $P_OPT_YES
@@ -467,22 +467,22 @@ commandCreate() {
 ## ==========
 
 ## Projektname, wird u.a. zur Benennung des Zielordners verwendet.
-$(makeConfigLine "CDEP_PROJECT_NAME" "$CDEP_PROJECT_NAME")
+$(makeConfigLine "CDEP_PACKAGE_NAME" "$CDEP_PACKAGE_NAME")
 
 ## Projektversion, wird für die Verwaltung der Installationen benötigt.
-$(makeConfigLine "CDEP_PROJECT_VERSION" "$CDEP_PROJECT_VERSION")
+$(makeConfigLine "CDEP_PACKAGE_VERSION" "$CDEP_PACKAGE_VERSION")
 
 ## Ersteller
-$(makeConfigLine "CDEP_PROJECT_CREATOR" "$CDEP_PROJECT_CREATOR")
+$(makeConfigLine "CDEP_PACKAGE_CREATOR" "$CDEP_PACKAGE_CREATOR")
 
 ## URL zur Webseite / zum Download
-$(makeConfigLine "CDEP_PROJECT_URL" "$CDEP_PROJECT_URL")
+$(makeConfigLine "CDEP_PACKAGE_URL" "$CDEP_PACKAGE_URL")
 
 ## Copyright
-$(makeConfigLine "CDEP_PROJECT_COPYRIGHT" "$CDEP_PROJECT_COPYRIGHT")
+$(makeConfigLine "CDEP_PACKAGE_COPYRIGHT" "$CDEP_PACKAGE_COPYRIGHT")
 
 ## Eine kurze Projektbeschreibung.
-$(makeConfigLine "CDEP_PROJECT_DESCRIPTION" "$CDEP_PROJECT_DESCRIPTION")
+$(makeConfigLine "CDEP_PACKAGE_DESCRIPTION" "$CDEP_PACKAGE_DESCRIPTION")
 
 
 ## ==========
@@ -709,7 +709,7 @@ commandPack() {
     fi
 
     # Variablen prüfen
-    for var in CDEP_PROJECT_NAME P_OUTPUT; do
+    for var in CDEP_PACKAGE_NAME P_OUTPUT; do
         validateVar "$var"
     done
 
@@ -1214,22 +1214,22 @@ Enthält abenfalls die Extension für Archivdateien, aber in einem Format zur Ve
 _CDEP_SHELL_BIN
 Enthält die verwendete Shell.
 .TP
-CDEP_PROJECT_NAME
+CDEP_PACKAGE_NAME
 Der Name für das Installationspaket.
 .TP
-CDEP_PROJECT_VERSION
+CDEP_PACKAGE_VERSION
 Die Versionsnummer des Installationspakets.
 .TP
-CDEP_PROJECT_CREATOR
+CDEP_PACKAGE_CREATOR
 Der Ersteller des Installationspakets.
 .TP
-CDEP_PROJECT_URL
+CDEP_PACKAGE_URL
 Die Download-URL des Installationspakets.
 .TP
-CDEP_PROJECT_COPYRIGHT
+CDEP_PACKAGE_COPYRIGHT
 Die Copyright-Information zum Installationspaket.
 .TP
-CDEP_PROJECT_DESCRIPTION
+CDEP_PACKAGE_DESCRIPTION
 Eine Beschreibung des Installationspakets.
 .TP
 CDEP_BASE_LOCAL
@@ -2082,12 +2082,12 @@ getInstallerTargets() {
     # Zielverzeichnisse ermitteln
     case "$P_OPT_SCOPE" in
         global)
-            P_BASE_TARGET="${CDEP_BASE_GLOBAL}/${CDEP_PROJECT_NAME}"
+            P_BASE_TARGET="${CDEP_BASE_GLOBAL}/${CDEP_PACKAGE_NAME}"
             P_TARGET_MAN="/usr/share/man"
             P_TARGET_SYM="/usr/local/bin"
             ;;
         local)
-            P_BASE_TARGET="${CDEP_BASE_LOCAL}/${CDEP_PROJECT_NAME}"
+            P_BASE_TARGET="${CDEP_BASE_LOCAL}/${CDEP_PACKAGE_NAME}"
             P_TARGET_MAN="$HOME/.local/share/man"
             P_TARGET_SYM="$HOME/.local/bin"
             ;;
@@ -2102,7 +2102,7 @@ getInstallerTargets() {
     P_TARGET_MANIFEST="$(getCdeployDir $P_OPT_SCOPE)/manifests"
     P_TARGET_HOOKS="$(getCdeployDir $P_OPT_SCOPE)/hooks"
 
-    for var in CDEP_PROJECT_NAME P_BASE_TARGET P_TARGET_BIN P_TARGET_ETC P_TARGET_LIB P_TARGET_MAN \
+    for var in CDEP_PACKAGE_NAME P_BASE_TARGET P_TARGET_BIN P_TARGET_ETC P_TARGET_LIB P_TARGET_MAN \
                 P_TARGET_MANIFEST P_TARGET_SYM; do
         validateVar "$var"
     done
@@ -2181,14 +2181,14 @@ getManifestContent() {
 getProjectInfo() {
     local divider="${1:- }"
 
-    if isEmpty "$CDEP_PROJECT_NAME"; then
-        CDEP_PROJECT_NAME="tools"
+    if isEmpty "$CDEP_PACKAGE_NAME"; then
+        CDEP_PACKAGE_NAME="tools"
     fi
 
-    if isEmpty "$CDEP_PROJECT_VERSION"; then
-        echo "$CDEP_PROJECT_NAME"
+    if isEmpty "$CDEP_PACKAGE_VERSION"; then
+        echo "$CDEP_PACKAGE_NAME"
     else
-        echo "${CDEP_PROJECT_NAME}${divider}${CDEP_PROJECT_VERSION}"
+        echo "${CDEP_PACKAGE_NAME}${divider}${CDEP_PACKAGE_VERSION}"
     fi
 }
 
@@ -2407,12 +2407,12 @@ makePackageInfo() {
 
         cdepShowMsg "Paketinformation" \
             "================" \
-            "Name.................: ${CDEP_PROJECT_NAME:-./.}" \
-            "Version..............: ${CDEP_PROJECT_VERSION:-./.}" \
-            "Ersteller............: ${CDEP_PROJECT_CREATOR:-./.}" \
-            "Quelle/URL...........: ${CDEP_PROJECT_URL:-./.}" \
+            "Name.................: ${CDEP_PACKAGE_NAME:-./.}" \
+            "Version..............: ${CDEP_PACKAGE_VERSION:-./.}" \
+            "Ersteller............: ${CDEP_PACKAGE_CREATOR:-./.}" \
+            "Quelle/URL...........: ${CDEP_PACKAGE_URL:-./.}" \
             "Hash.................: $hsh" \
-            "Copyright............: ${CDEP_PROJECT_COPYRIGHT:-./.}"
+            "Copyright............: ${CDEP_PACKAGE_COPYRIGHT:-./.}"
 
         cdepShowMsg "" \
             "Installationspfade:" \
@@ -2421,7 +2421,7 @@ makePackageInfo() {
 
         cdepShowMsg "" \
             "Beschreibung:" \
-            "${CDEP_PROJECT_DESCRIPTION:-./.}" | fold -s -w "$_lw"
+            "${CDEP_PACKAGE_DESCRIPTION:-./.}" | fold -s -w "$_lw"
 
 
         # Hier aufhören für die einfache Ausgabe
@@ -2598,8 +2598,8 @@ manifestAppend() {
     local hash;  hash="$(getFileHash "$filepath")"
 
     # Projektname und -version
-    local pname;    pname="$CDEP_PROJECT_NAME"
-    local pversion; pversion="$(versionNormalized "$CDEP_PROJECT_VERSION")"
+    local pname;    pname="$CDEP_PACKAGE_NAME"
+    local pversion; pversion="$(versionNormalized "$CDEP_PACKAGE_VERSION")"
 
     # Dateigröße und mtime ermitteln
     local size mtime
@@ -2639,7 +2639,7 @@ manifestInit() {
     fileAppend "$P_MANIFEST_FILE" \
         "###" \
         "# ${_CDEP_SCRIPT_NAME} v${_CDEP_SCRIPT_VERSION} – Manifest" \
-        "# Projekt...........: ${CDEP_PROJECT_NAME} v${CDEP_PROJECT_VERSION}" \
+        "# Projekt...........: ${CDEP_PACKAGE_NAME} v${CDEP_PACKAGE_VERSION}" \
         "# Zielbereich.......: ${P_OPT_SCOPE}" \
         "# Installationsdatum: $install_date" \
         "# Quelle/Paket......: $(absPath "$P_PACKAGE")" \
