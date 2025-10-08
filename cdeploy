@@ -554,7 +554,7 @@ commandInstall() {
 
     local scope_str;  [[ "$P_OPT_SCOPE" == "global" ]] \
                         && scope_str="Globale" || scope_str="Lokale"
-    cdepShowMsg "${scope_str} Installation von Paket '$(getProjectInfo "")'" \
+    cdepShowMsg "${scope_str} Installation von Paket '$(cdepGetPackageInfo "")'" \
             "aus Quelle $(absPath "$P_PACKAGE_INPUT")" \
             "" \
             ""
@@ -681,7 +681,7 @@ commandPack() {
     # Zusammenfassung der Aufgabe anzeigen
     showTitle
 
-    local project_info;  project_info="$(getProjectInfo)"
+    local project_info;  project_info="$(cdepGetPackageInfo)"
     if [[ "$P_OPT_COMPRESSED" -eq 1 ]]; then
         cdepShowMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." ""
     else
@@ -1171,6 +1171,9 @@ Liefert das Basis-Installationsverzeichnis.
 cdepGetHookParameter\fR <name> [default]
 Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
 .TP
+cdepGetPackageInfo\fr [divider]
+Liefert den Paketnamen zusammen mit der Versionsnummer. Der Optionale Parameter \fIdivider\fR definiert das Trennzeichen zwischen beiden Angaben. Standardmäßig wird ein Bindestrich (`-`) verwendet.
+.TP
 cdepSafeRun\fR <command> ['MSG:'<success_message]
 Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig, und es beim Skriptstart erfolgreich aktiviert wurde. Gibt bei Fehlern automatisch eine Fehlermeldung aus. Die Methode beendet bei einem Fehler \fInicht\fR automatisch das Skript, sondern gibt einen Returncode ungleich 0 zurück.
 .br
@@ -1420,6 +1423,23 @@ cdepGetHookParameter() {
     done
 
     printf '%s' "$result"
+}
+
+
+## Liefert die Projektinformation (Name + Version) als String
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+cdepGetPackageInfo() {
+    local divider="${1:- }"
+
+    if isEmpty "$CDEP_PACKAGE_NAME"; then
+        CDEP_PACKAGE_NAME="tools"
+    fi
+
+    if isEmpty "$CDEP_PACKAGE_VERSION"; then
+        echo "$CDEP_PACKAGE_NAME"
+    else
+        echo "${CDEP_PACKAGE_NAME}${divider}${CDEP_PACKAGE_VERSION}"
+    fi
 }
 
 
@@ -2176,23 +2196,6 @@ getManifestContent() {
 }
 
 
-## Liefert die Projektinformation (Name + Version) als String
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-getProjectInfo() {
-    local divider="${1:- }"
-
-    if isEmpty "$CDEP_PACKAGE_NAME"; then
-        CDEP_PACKAGE_NAME="tools"
-    fi
-
-    if isEmpty "$CDEP_PACKAGE_VERSION"; then
-        echo "$CDEP_PACKAGE_NAME"
-    else
-        echo "${CDEP_PACKAGE_NAME}${divider}${CDEP_PACKAGE_VERSION}"
-    fi
-}
-
-
 ## Liefert einen String zur Anzeige des Zielbereichs (Scope)
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 getScopeStr() {
@@ -2628,7 +2631,7 @@ manifestInit() {
     # Bestimmen der Manifestdatei
     cdepSafeRun mkdir -p "$P_TARGET_MANIFEST"
 
-    P_MANIFEST_FILE="${P_TARGET_MANIFEST}/$(getProjectInfo -).manifest"
+    P_MANIFEST_FILE="${P_TARGET_MANIFEST}/$(cdepGetPackageInfo -).manifest"
     if [ -f "$P_MANIFEST_FILE" ]; then
         cdepSafeRun rm "$P_MANIFEST_FILE"
     fi
@@ -2728,7 +2731,7 @@ saveRemoveHooks() {
             cdepShowError 1 "Verzeichnis für Paketinformationen konnte nicht erstellt werden."
 
     # Zieldatei z. B. "mypackage-1.0.hook"
-    local hook_file; hook_file="$(getProjectInfo "-").hook"
+    local hook_file; hook_file="$(cdepGetPackageInfo "-").hook"
     local hook_path="${hook_dir}/${hook_file}"
 
     # config-Datei (cdeploy.conf) kopieren und zip-en;
