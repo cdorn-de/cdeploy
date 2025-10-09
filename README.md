@@ -2,7 +2,7 @@
 
 # *cdeploy* – Ein leichtgewichtiges Installationssystem für Bash-kompatible Systeme
 
-**Summary:**  
+**Summary**  
 *cdeploy* is a fully shell-based, Bash-compatible installation system that can install, update, and remove software packages. It relies solely on standard Unix commands and requires no external dependencies. The system is transparent, predictable, and portable — ideal for minimalist environments, custom projects, or systems without a package manager.
 
 For now, this software is available in German only.
