@@ -2207,6 +2207,29 @@ getScopeStr() {
 }
 
 
+## Liefert die Breite (Spalten) des Terminalfensters. Wenn die Breite nicht ermittelt
+## werden kann, wird -1 zurückgegeben.
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+getTerminalWidth() {
+    width=-1  # Standardwert
+
+    # Versuch 1: stty size
+    if command -v stty >/dev/null 2>&1; then
+        set -- "$(stty size 2>/dev/null)"
+        if [ $# -eq 2 ]; then
+            width=$2
+        fi
+    fi
+
+    # Versuch 2: COLUMNS-Variable
+    if [ "$width" -eq -1 ] && [ -n "$COLUMNS" ]; then
+        width=$COLUMNS
+    fi
+
+    echo "$width"
+}
+
+
 ## Installieren der Man-Pages aus dem Installationspaket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 installManpages() {
@@ -2295,6 +2318,21 @@ isOverridden() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 isTrue() {
     isFalse "$1"; return $((1 - $?))
+}
+
+
+## Liefert von Links die angegebene Anzahl von Zeichen einer Zeichenkette. Der erste
+## Parameter ist die Zeichenkette, der Zweite die Anzahl der Zeichen.
+##
+## ACHTUNG: Diese Methode verarbeitet Zeilenumbrüche NICHT korrekt! Sie liefert unter
+##          Umständen zu kurze Ergebnisse, wenn sie auf einen Zeilenumbruch stößt!
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+left() {
+    str=$1
+    width=$2
+
+    utf8="$(locale -a 2>/dev/null | grep -im 1 '^.\{0,\}\.utf\(-\)\{0,1\}8$' || echo C)"
+    printf '%s' "$str" | LC_ALL="$utf8" grep -o ".\{,$width\}" | head -n1
 }
 
 
@@ -2755,16 +2793,23 @@ showBottomLine() {
     declare -gr _BOTTOM_LINE_SHOWN=1
 
     # Ausgabe im Terminalfenster
-    if isFalse $P_OPT_QUIET; then
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    local str
+
+    if [ "$termW" -lt 40 ]; then
+        echo ""
+    elif isFalse $P_OPT_QUIET; then
         {
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        str="$(left "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" "$termW")"
+        echo "$str"
         echo
         } > /dev/tty
     fi
 
     # Ausgabe für Umleitung in Datei
     if [ ! -t 1 ]; then
-        echo "===================================================================================="
+        str="$(left "====================================================================================" "$termW")"
+        echo "$str"
     fi
 }
 
@@ -2807,17 +2852,26 @@ showTitle() {
     if isTrue "${_TITLE_SHOWN:=0}"; then return; fi
     declare -gr _TITLE_SHOWN=1
 
-    local info="${_CDEP_SCRIPT_NAME} Version ${_CDEP_SCRIPT_VERSION} · Copyright (c) 2025 Christian Dorn · Alle Rechte vorbehalten. "
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    local info=""
+    if [ "$termW" -ge 40 ]; then
+        info="${_CDEP_SCRIPT_NAME} Version ${_CDEP_SCRIPT_VERSION}                                                                      ."
+    fi
 
-    if isTrue "$P_OUTPUT_FORMATTED"; then
+    if [ "$termW" -lt 40 ]; then
+        # keine Ausgabe
+        :
+    elif isTrue "$P_OUTPUT_FORMATTED"; then
+        info="$(left " $info " "$termW")"
         cdepShowMsg "" \
-                "${_INVERT} ${info} ${_RESET}" \
+                "${_INVERT}${info}${_RESET}" \
                 ""
     else
+        local line;  line="$(left "====================================================================================" "$termW")"
         cdepShowMsg "" \
-                "====================================================================================" \
+                "$line" \
                 "${info}" \
-                "====================================================================================" \
+                "$line" \
                 ""
     fi
 }
