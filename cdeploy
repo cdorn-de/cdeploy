@@ -683,9 +683,13 @@ commandPack() {
 
     local project_info;  project_info="$(cdepGetPackageInfo)"
     if [[ "$P_OPT_COMPRESSED" -eq 1 ]]; then
-        cdepShowMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." ""
+        cdepShowMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." \
+        "" \
+        ""
     else
-        cdepShowMsg "Erstelle Installationsarchiv für Paket ${project_info}." ""
+        cdepShowMsg "Erstelle Installationsarchiv für Paket ${project_info}." \
+        "" \
+        ""
     fi
 
     # Archiv-Extension zum Pfad hinzufügen, wenn nötig;
@@ -728,7 +732,11 @@ commandPack() {
                 "$P_OUTPUT"
     fi
 
-    cdepShowMsg "Das Installationsarchiv wurde erfolgreich erstellt."
+    cdepShowMsg "Das Installationsarchiv wurde erfolgreich erstellt." \
+        "" \
+        "   Prüfsumme des Installationsarchivs:" \
+        "   $(getFileHash "$filename")" \
+        ""
 }
 
 
@@ -907,6 +915,10 @@ EOF
     fi
 
 
+    # Gesamtzahl der Fehler errechnen
+    err_count=$((err_hash + err_notfound + err_invalid + err_rm ))
+
+
     # Projektverzeichnis, Manifestdatei und Hookdatei entfernen, wenn möglich
     if isTrue "$P_OPT_DRYRUN"; then
         echo
@@ -915,17 +927,19 @@ EOF
         cdepShowMsg "  X  MANIFESTDATEI $manifest_file"
     else
         echo
-        [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
-        cdepSafeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
-        removeDir "$P_TARGET_HOOKS"
-        cdepSafeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
-        removeDir "$P_TARGET_MANIFEST"
+        # Die Manifest- und Hookdatei nur löschen, wenn das komplette Paket entfernt wurde
+        if [ "$err_count" -eq 0 ]; then
+            [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
+            cdepSafeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
+            removeDir "$P_TARGET_HOOKS"
+            cdepSafeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
+            removeDir "$P_TARGET_MANIFEST"
+        fi
         removeDir "$(getCdeployDir "$P_OPT_SCOPE")"
         removeDir "$P_BASE_TARGET" "  X  PROJEKTVERZEICHNIS $P_BASE_TARGET"
     fi
 
     # Abschluss
-    err_count=$((err_hash + err_notfound + err_invalid + err_rm ))
     if [ "$err_count" -eq 0 ]; then
         cdepShowMsg "" \
                 "" \
