@@ -1,6 +1,8 @@
-# *cdeploy* – leichtgewichtiges Installationssystem für Bash-kompatible Systeme
+![](pics/cdeploy_icon_256.png)
 
-**English summary:**  
+# *cdeploy* – Ein leichtgewichtiges Installationssystem für Bash-kompatible Systeme
+
+**Summary:**  
 *cdeploy* is a fully shell-based, Bash-compatible installation system that can install, update, and remove software packages. It relies solely on standard Unix commands and requires no external dependencies. The system is transparent, predictable, and portable — ideal for minimalist environments, custom projects, or systems without a package manager.
 
 For now, this software is available in German only.
@@ -44,43 +46,10 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 - Automatisches Anlegen von Manifesten zum Nachvollziehen von Installationen.
 - Hooks für die individuelle Erweiterung der Befehle `install` und `remove`.
 - API für die Hook-Programmierung.
-- Abfangen von Shell-Signalen per `trap` zum Entfernen temporärer Dateien beim Beenden bzw. bei Skriptabbruch.
+- Abfangen von Shell-Signalen per `trap` zum Entfernen temporärer Dateien beim Beenden und bei einem Skriptabbruch.
 
 
-
-### Installationsablauf
-
-1. Parameterprüfung
-2. sudo-Abfrage grundsätzlich bei globaler Installation oder wenn einzelne Zielverzeichnisse es erfordern
-3. Hook-Warnung und Bestätigung
-4. Hooks sichern (falls Remove-Hooks vorhanden)
-5. PreInstall-Hook ausführen
-6. Paketdateien kopieren (nur Ältere ersetzen durch `cp -u`)
-7. PostInstall-Hook ausführen
-8. Cleanup temporärer Dateien
-
-
-
-### Entfernen eines Pakets
-
-1. Parameterprüfung
-2. sudo-Abfrage grundsätzlich bei globaler Installation oder wenn einzelne Zielverzeichnisse es erfordern
-3. Manifeste laden (lokal & global)
-4. Sicherheitsabfrage (Bestätigung mit „ja“)
-5. Hooks laden, wenn vorhanden
-6. Dateien entfernen
-    1. Hash-Überprüfung
-    2. Prüfung auf mehrfach verwendete Dateien
-    3. Datei löschen
-    4. Eltern-Verzeichnisse entfernen, wenn leer (`rmdir`)
-7. Hooks und Manifest löschen, wenn alle Dateien entfernt wurden
-8. Cleanup temporärerDateien
-9. Fehlerauswertung bei Konflikten
-
-
-
-
-## Paketstruktur
+### Paketstruktur
 
 Eine typische Paketstruktur sieht folgendermaßen aus:
 
@@ -178,8 +147,7 @@ Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Pa
 
 
 
-
-## Hooks und Parameter
+### Hooks und Parameter
 
 Hooks erweitern die Funktionalität eines Pakets, z. B. durch eigene Aktionen vor oder nach der Installation. *cdeploy* überstütz dabei auch individuelle Parameter für Hooks, die über die Option `--hook-parameter` bzw. `-p` definiert werden. Hook-Parameter bestehen aus Schlüssel-Werte-Paaren. Der Schlüssel beginnt mit dem Paragraphenzeichen (`§`), weshalb dieses Zeichen nicht im Schlüssel oder Wert vorkommen darf. Nach dem Schlüssel kommt ein Gleichheitszeichen (`=`) und dann der Wert. Wenn der Wert Leerzeichen enthält, muss er mit einfachen (`''`) oder doppelten (`""`) Anführungszeichen umschlossen werden. Im ersten Fall dürfen die Werte keine einfachen, im zweiten Fall keine doppelten Anführungszeichen enthalten. Das jeweils gegenteilige Anführungszeichen ist aber erlaubt!
 
@@ -203,13 +171,12 @@ username=$(getHookParam "user" "defaultuser")
 ```
 
 
-
-### Öffentliche Hook-API
+#### Öffentliche Hook-API
 
 Für Hook-Entwickler stellt *cdeploy* definierte Umgebungsvariablen bereit, z. B. für Paketpfade, Manifest-Positionen oder Installationskontexte. Eine vollständige Beschreibung der API befindet sich in der Man-Page.
 
 
-#### Konstanten
+##### Konstanten
 Konstanten in der Hook-API beginnen immer mit dem Präfix `_CDEP_` und werden immer komplett in Großbuchstaben geschrieben. Sie lassen sich durch den Unterstrich (`_`) direkt am Anfang von normalen Variablen unterscheiden.
 
 - `_CDEP_SCRIPT_NAME="cdeploy"`
@@ -219,7 +186,7 @@ Konstanten in der Hook-API beginnen immer mit dem Präfix `_CDEP_` und werden im
 - `_CDEP_SHELL_BIN="${SHELL:-/bin/sh}"`
 
 
-#### Variablen
+##### Variablen
 Globale Variablen der Hook-API beginnen immer mit dem Präfix `CDEP` und werden ebenfalls immer komplett in Großbuchstaben geschrieben. Im Vergleich zu den Konstanten beginnen sie nicht mit einem Unterstrich (`_`).
 
 - `CDEP_PACKAGE_NAME="tools"         # Name des Installationspakets`
@@ -232,7 +199,7 @@ Globale Variablen der Hook-API beginnen immer mit dem Präfix `CDEP` und werden 
 - `CDEP_BASE_LOCAL="$HOME/.local"    # Basisverzeichnis für eine lokale Installation`
 
 
-#### Methoden
+##### Methoden
 Die Methoden der Hook-API beginnen immer mit dem Präfix `cdep` und verwenden die *camelCase*-Schreibweise.
 
 - `cdepGetBaseTarget`  
@@ -249,6 +216,42 @@ Die Methoden der Hook-API beginnen immer mit dem Präfix `cdep` und verwenden di
     Gibt eine normale Meldung aus, die aus mehreren Zeilen bestehen kann.
 - `cdepShowWarning [message ...]`  
     Gibt eine Warnmeldung aus, die aus mehreren Zeilen bestehen kann.
+
+
+
+
+## Abläufe
+
+
+
+### Installation
+
+1. Parameterprüfung
+2. sudo-Abfrage grundsätzlich bei globaler Installation oder wenn einzelne Zielverzeichnisse es erfordern
+3. Hook-Warnung und Bestätigung
+4. Hooks sichern (falls Remove-Hooks vorhanden)
+5. PreInstall-Hook ausführen
+6. Paketdateien kopieren (nur Ältere ersetzen durch `cp -u`)
+7. PostInstall-Hook ausführen
+8. Cleanup temporärer Dateien
+
+
+
+### Entfernen eines Pakets
+
+1. Parameterprüfung
+2. sudo-Abfrage grundsätzlich bei globaler Installation oder wenn einzelne Zielverzeichnisse es erfordern
+3. Manifeste laden (lokal & global)
+4. Sicherheitsabfrage (Bestätigung mit „ja“)
+5. Hooks laden, wenn vorhanden
+6. Dateien entfernen
+    1. Hash-Überprüfung (geänderte Dateien werden nur gelöscht, wenn die Option `--force` verwendet wird)
+    2. Prüfung auf mehrfache Verwendung durch verschiedene Versionen eines Pakets (mehrfach verwendete Dateien werden **nicht** gelöscht)
+    3. Datei löschen
+    4. Eltern-Verzeichnis entfernen, wenn leer (`rmdir`)
+7. Hooks und Manifest löschen, wenn alle Dateien entfernt wurden
+8. Cleanup temporärerDateien
+9. Fehlerauswertung bei Konflikten
 
 
 
