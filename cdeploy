@@ -2426,7 +2426,7 @@ makePackageInfo() {
         # Titel und Beschreibung der Aktion ausgeben
         showTitle
 
-        cdepShowMsg "Informationen zu Paket aus Quelle" \
+        cdepShowMsg "Informationen zum Paket aus Quelle" \
                 "$(absPath "$P_PACKAGE_INPUT")" \
                 "" \
                 ""
@@ -2807,7 +2807,7 @@ showBottomLine() {
     declare -gr _BOTTOM_LINE_SHOWN=1
 
     # Ausgabe im Terminalfenster
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 85 ] && termW=85
     local str
 
     if [ "$termW" -lt 40 ]; then
@@ -2866,7 +2866,7 @@ showTitle() {
     if isTrue "${_TITLE_SHOWN:=0}"; then return; fi
     declare -gr _TITLE_SHOWN=1
 
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 85 ] && termW=85
     local info=""
     if [ "$termW" -ge 40 ]; then
         info="${_CDEP_SCRIPT_NAME} Version ${_CDEP_SCRIPT_VERSION}                                                                      ."
