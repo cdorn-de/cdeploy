@@ -1384,8 +1384,8 @@ commandShowPackageInfo() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 commandShowVersionAndExit() {
     cdepShowMsg "${_CDEP_SCRIPT_NAME} v${_CDEP_SCRIPT_VERSION}" \
-            "Copyright (c) 2025 Christian Dorn" \
-            "Alle Rechte vorbehalten."
+            "Copyright (c) 2025 Christian Dorn <https://github.com/cdorn-de>" \
+            "Veröffentlicht unter der MIT-Lizenz."
     exit 0
 }
 
