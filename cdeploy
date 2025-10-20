@@ -109,7 +109,7 @@ sudo -k
 
 # Konstanten
 readonly _CDEP_SCRIPT_NAME="cdeploy"
-readonly _CDEP_SCRIPT_VERSION="1.0"
+readonly _CDEP_SCRIPT_VERSION="0.7 beta"
 readonly _CDEP_PACK_EXT=".cdp"       # Extension für Paket-Archive
 readonly _CDEP_PACK_EXT_RE="\\.cdp"  # ...zur Verwendung mit RegEx
 readonly _CDEP_SHELL_BIN="${SHELL:-/bin/sh}"
@@ -1014,16 +1014,16 @@ EOF
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 commandShowHelpAndExit() {
     groff -man -Tutf8 -k <<'EOF' | less -R
-.TH CDEPLOY 1 "Oktober 2025" "Version 1.0" "Benutzerbefehle"
+.TH CDEPLOY 1 "Oktober 2025" "Version 0.7 beta" "Benutzerbefehle"
 .SH NAME
 .TP 10
 cdeploy –
-leichtgewichtiges, Bash-kompatibles Deployment-System für Softwarepakete
+leichtgewichtiges, Bash-kompatibles Installationssystem für Softwarepakete
 .SH ÜBERSICHT
 .B cdeploy
 \fIBEFEHL\fR [\fIOPTIONEN\fR] [\fIARCHIV\fR] [\fIPAKET\fR]
 .SH BESCHREIBUNG
-\fBcdeploy\fR ist ein leichtgewichtiges, portables Deployment-System für Softwarepakete, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist.
+\fBcdeploy\fR ist ein leichtgewichtiges, portables Installationssystem für Softwarepakete, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist. Als Installationspaket können herkömmliche Verzeichnisse oder cdeploy-Archive verwendet werden.
 
 Es ermöglicht lokale und globale Installationen und verwaltet installierte Dateien über transparente Manifestdateien mit Hash-Prüfsummen. Das Skript prüft, ob der Zugriff auf eines der Zielverzeichnisse Administratorrechte benötigt und verlangt ggf. ein Login. Eventuell bestehende \fIsudo\fR-Sitzungen werden bei Aufruf des Skripts beendet.
 
@@ -1031,7 +1031,7 @@ Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschli
 
 .I PAKETSTRUKTUR
 .LP
-Die typisches cdeploy-Pakets hat diese Struktur:
+Ein typisches cdeploy-Paket hat folgende Struktur:
 
 .RS
 .nf
@@ -1046,14 +1046,14 @@ Die typisches cdeploy-Pakets hat diese Struktur:
 .fi
 .RE
 
-Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR \fIetc\fR \fIlib\fR und \fIman\fR kopiert werden. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
+Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR, \fIetc\fR und \fIlib\fR kopiert werden. Die Datein in \fIman\fR werden in die Systemverzeichniss für Man-Pages kopiert. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
 
 Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von einem Tabulatorzeichen und dem Zielpfad. Leerzeilen und Kommentare werden ignoriert.
 
 .SH BEFEHLE
 .TP
 .B create\fR [optionen] \fIPAKET\fR
-Legt ein leeres Installationspaket (Template) als Verzeichnis an. In dieses Verzeichnis können alle zu installierenden Dateien kopiert werden. Die Konfigurationsdateien ./cdeploy.conf und ./files/files.conf helfen bei der weiteren Konfiguration des Pakets.
+Legt ein leeres Installationspaket (Template) als Verzeichnis an. In dieses Verzeichnis können alle zu installierenden Dateien kopiert werden. Zur weiteren Konfiguration des Pakets dienen die Dateien ./cdeploy.conf und ./files/files.conf.
 
 Zum Verpacken in einem Archiv für die Weitergabe an Dritte, siehe Befehl \fIpack\fR.
 .TP
@@ -1061,10 +1061,10 @@ Zum Verpacken in einem Archiv für die Weitergabe an Dritte, siehe Befehl \fIpac
 Gibt diese Hilfeseite aus.
 .TP
 .B info\fR [optionen] \fIPAKET\fR
-Zeigt die Metadaten eines Pakets an (\fIName Version Ersteller Quelle/URL Hash Copyright Beschreibung\fR). (Siehe auch Option --verbose.)
+Zeigt die Metadaten eines Pakets an (\fIName Version Ersteller Quelle/URL Hash Copyright Beschreibung\fR). Mit der Option --verbose werden auch alle im Archiv enthaltenen Dateien aufgelistet.
 .TP
 .B install\fR [optionen] \fIPAKET\fR
-Installiert ein Paket aus einem lokalen Verzeichnis, einer lokalen Datei oder einer URL. Es muss zwingend eine der beiden Option --local oder --global verwendet werden.
+Installiert ein Paket aus einem lokalen Verzeichnis, einem lokalen Archiv oder einer URL. Es muss zwingend eine der beiden Option --local oder --global verwendet werden.
 
 Die Funktionalität von \fBinstall\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss. (Siehe auch Option --use-hooks.)
 
@@ -1109,16 +1109,17 @@ Führt einen Testlauf für die Installation/das Entfernen eines Pakets aus. Es w
 Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer Intallation geändert wurden. Mit --force werden auch diese Dateien entfernt.
 .TP
 .B --global | -g\fR --- (Befehle: install, remove)
-Führt die Installation oder Entfernung im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
+Führt die Installation oder das Entfernen im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
 .TP
 .B --hook-parameters=".." | -p=".."\fR --- (Befehle: install, remove)
 Spezifiziert Parameter für die definierten Hooks. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
 .TP
 .B --local | -l\fR --- (Befehle: install, remove)
-Führt die Operation im benutzerspezifischen Verzeichnis aus.
+Führt die die Installation oder das Entfernen im benutzerspezifischen Verzeichnis aus.
 .TP
 .B --name=".."\fR --- (Befehl: create)
-Trägt beim Erstellen eines leeren Pakets den Paketnamen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird..TP
+Trägt beim Erstellen eines leeren Pakets den Paketnamen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
+.TP
 .B --quiet | -q
 Unterdrückt alle Ausgaben, Warn- und Fehlermeldungen. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
@@ -1153,7 +1154,7 @@ Lokales Verzeichnis mit internen Informationen zu den Installationen. Wird in de
 Globales Verzeichnis mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
 @/manifests/MANIFEST
-Einthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = cdeploy-Verzeichnis)
+Enthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = cdeploy-Verzeichnis)
 .TP
 @/hooks/HOOKDATEI
 Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat. (@ = cdeploy-Verzeichnis)
@@ -1162,15 +1163,13 @@ Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern
 Hooks sind optionale Shell-Skripte, die von einem Paket implementiert werden können, um den Installations- oder Entfernungsprozess zu erweitern. Die folgenden Hook-Typen werden unterstützt:
 .TP
 .B pre- und post-install
-Wird vor bzw. nach der Installation ausgeführt.
+Werden vor bzw. nach der Installation ausgeführt.
 .TP
 .B pre- und post-remove
-Wird vor bzw. nach dem Entfernen eines Pakets ausgeführt.
+Werden vor bzw. nach dem Entfernen eines Pakets ausgeführt.
 .RE
 .sp
-Hooks werden über gespeicherte SHA256-Hashes im Manifest verifiziert.
-.br
-Vor der Ausführung erfolgt eine Sicherheitswarnung.
+Vor der Ausführung von Hooks erfolgt eine Sicherheitswarnung.
 .LP
 .B HOOK-PARAMETER
 .br
@@ -1187,9 +1186,7 @@ Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare d
 
 .B HOOK-API
 .br
-Für Programmierung von Hooks gibt es verschiedene Hilfsmethoden. Besonders die Methoden zur Ausgabe von Meldungen (\fIcdepShowMessage cdepShowError\fR und \fIcdepShowWarning\fR) sollten verwendet werden, da sie direkt in das Fehlermanagement von \fBcdeploy\fR greifen.
-
-Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen Umgebungsvariablen in Hooks verwendet werden. Sie dienen zur Beschreibung des Pakets und zur Generierung der Installationspfade und Manifest- und Hookdateien.
+Für Programmierung von Hooks gibt es verschiedene Hilfsmethoden, um Hooks nahtlos in das System zu integrieren. Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen Umgebungsvariablen in Hooks verwendet werden. Sie dienen zur Beschreibung des Pakets und zum Generieren der Installationspfade und Manifest- und Hookdateien.
 .TP
 cdepGetBaseTarget
 Liefert das Basis-Installationsverzeichnis.
@@ -1201,8 +1198,8 @@ cdepGetPackageInfo\fR [divider]
 Liefert den Paketnamen zusammen mit der Versionsnummer. Der Optionale Parameter \fIdivider\fR definiert das Trennzeichen zwischen beiden Angaben. Standardmäßig wird ein Bindestrich (`-`) verwendet.
 .TP
 cdepSafeRun\fR <command> ['MSG:'<success_message>]
-Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig, und es beim Skriptstart erfolgreich aktiviert wurde. Gibt bei Fehlern automatisch eine Fehlermeldung aus. Die Methode beendet bei einem Fehler \fInicht\fR automatisch das Skript, sondern gibt einen Returncode ungleich 0 zurück.
-.br
+Führt (Datei-)Befehle sicher aus und verwendet 'sudo' wenn nötig, und es beim Skriptstart erfolgreich aktiviert wurde. Gibt bei Fehlern automatisch eine Meldung aus. Die Methode beendet bei einem Fehler \fInicht\fR automatisch das Skript, sondern gibt einen Returncode ungleich 0 zurück.
+.sp
 Optional kann im letzten Parameter eine Meldung übergeben werden, die angezeigt wird, wenn die Anweisung erfolgreich ausgeführt wurde. Dieser Parameter muss mit der Zeichenfolge 'MSG:' beginnen.
 .TP
 cdepShowError\fR <error_code> [message ...]
@@ -1212,7 +1209,7 @@ cdepShowMsg\fR [message ...]
 Für die Ausgabe von normalen Statusmeldungen. Es kann eine beliebige Anzahl Parameter übergeben werden, die jeweils als eigene Textzeile ausgegeben werden.
 .TP
 cdepShowWarning\fR [message ...]
-Für die Ausgabe von Warnungen. Es kann eine beliebige Anzahl Parameter übergeben werden, die jeweils als eigene Textzeile ausgegeben werden.
+Für die Ausgabe von Warnmeldungen. Es kann eine beliebige Anzahl Parameter übergeben werden, die jeweils als eigene Textzeile ausgegeben werden.
 
 .SH RÜCKGABEWERTE
 .TP
@@ -1226,7 +1223,9 @@ Ein Fehler ist aufgetreten.
 Das Skript wurde vom Benutzer abgebrochen.
 
 .SH UMGEBUNGSVARIABLEN & KONSTANTEN
-Konstanten beginnen mit einem Unterstrich (_) und können nicht geändert werden. Die Umgebungsvariablen sollten über die Konfigurationsdatei \fIcdeploy.conf\fR im Installationspaket definiert werden.
+Konstanten beginnen per Konvention mit einem Unterstrich (_), werden komplett in Großbuchstaben geschrieben. Ihre Werte sind unveränderlich.
+.sp
+Umgebungsvariablen werden ebenfalls komplett in Großbuchstaben geschrieben, beginnen aber nicht mit einem Unterstrich (_). Sie sollten ausschließlich über die Konfigurationsdatei \fIcdeploy.conf\fR im Installationspaket definiert werden.
 .TP
 _CDEP_SCRIPT_NAME
 Enthält den Namen des Skripts ("cdeploy").
@@ -1235,13 +1234,14 @@ _CDEP_SCRIPT_VERSION
 Enthält die Versionsnummer des Skripts.
 .TP
 _CDEP_PACK_EXT
-Enthält die Extension für Archivdateien (.cdp).
+Enthält die Dateinamenerweiterung für Archivdateien (.cdp).
 .TP
 _CDEP_PACK_EXT_RE
-Enthält abenfalls die Extension für Archivdateien, aber in einem Format zur Verwendung mit regulären Ausdrücken.
+Enthält abenfalls die Dateinamenerweiterung für Archivdateien, aber in einem Format zur Verwendung mit regulären Ausdrücken.
 .TP
 _CDEP_SHELL_BIN
 Enthält die verwendete Shell.
+.sp
 .TP
 CDEP_PACKAGE_NAME
 Der Name für das Installationspaket.
@@ -1262,49 +1262,36 @@ CDEP_PACKAGE_DESCRIPTION
 Eine Beschreibung des Installationspakets.
 .TP
 CDEP_BASE_LOCAL
-Enthält das Standardbasisverzeichnis für lokale Installationen.
+Enthält das Basisverzeichnis für lokale Installationen.
 .TP
 CDEP_BASE_GLOBAL
-Enthält das Standardbasisverzeichnis für globale Installationen.
+Enthält das Basisverzeichnis für globale Installationen.
 
 .SH BEISPIELE
-.TP
+.TP 7
 cdeploy install --local ./meinpaket.cdp
-.EX
 Lokale Installation eines Pakets.
-.EE
-.TP
+.TP 7
 cdeploy install --global ./meinpaket.cdp
-.EX
 Globale Installation eines Pakets.
-.EE
-.TP
+.TP 7
 cdeploy install --local --hook-parameters="§name='John Doe'
            $firma="ACME Corp." $alter=42" ./meinpaket.cdp
-.EX
+.br
 Installation mit Parametern für einen Hook.
-.EE
-.TP
+.TP 7
 cdeploy list
-.EX
 Auflisten aller installierten Pakete.
-.EE
-.TP
+.TP 7
 cdeploy remove meinpaket-1.0
-.EX
 Entfernen eines Pakets. Es muss der Paketname inkl. Paketversion
 angegeben werden (siehe auch: \fBcdeploy list\fR).
-.EE
-.TP
+.TP 7
 cdeploy pack ./meinarchiv.cdp ./meinpaket
-.EX
-Eine Archivdatei erstellen.
-.EE
-.TP
+Eine Archivdatei erstellen. (Die Dateinamenerweiterung wird ggf. automatisch hinzugefügt.)
+.TP 7
 cdeploy info ./meinpaket.cdp
-.EX
 Informationen zu einem Paket abfragen.
-.EE
 
 .SH AUTOR
 Christian Dorn <https://github.com/cdorn-de>
@@ -1334,7 +1321,7 @@ AUFGRUND EINES VERTRAGS, UNERLAUBTER HANDLUNG ODER ANDERWEITIG, DIE AUS ODER IM
 ZUSAMMENHANG MIT DER SOFTWARE ODER DER VERWENDUNG ODER ANDEREN GESCHÄFTEN MIT DER SOFTWARE
 ENTSTEHEN.
 .LP
-Die vollständige Lizenz ist in der Datei
+Die vollständige Lizenz ist auch in der Datei
 .I LICENSE
 im Quellverzeichnis enthalten.
 
@@ -1348,7 +1335,8 @@ im Quellverzeichnis enthalten.
 .BR sh (1),
 .BR sha256sum (1),
 .BR shasum (1),
-.BR sudo (8)
+.BR sudo (8),
+.BR tar (1)
 EOF
 
      exit 0
