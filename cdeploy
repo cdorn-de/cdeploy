@@ -50,6 +50,7 @@
 ##  - Globale Variablen & Konstanten
 ##  - main()-Methode
 ##  - Dispatcher-Methoden
+##  - Hook-API
 ##  - Hilfsmethoden
 ##  - main()-Methode aufrufen
 ##
