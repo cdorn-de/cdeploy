@@ -561,8 +561,8 @@ commandInstall() {
             ""
 
     # Warnung bei Verwendung von Hooks; Zugriffsrechte prüfen, ggf. Kennwort abfragen
-    usesInstallHooks && showHookWarning
     checkPermissions
+    usesInstallHooks && showHookWarning
 
     P_SHOW_SYNOPSIS=1
 
@@ -780,13 +780,18 @@ commandRemove() {
             cdepShowMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
             quit 2
         fi
-
-        cdepShowMsg "" \
-                "" \
-                "   (Paket '${P_PACKAGE}' wird entfernt.)" \
-                "" \
-                ""
+        cdepShowMsg ""\
+                    ""
     fi
+
+
+    # Zugriffsrechte prüfen, ggf. Kennwort abfragen
+    checkPermissions
+
+
+    cdepShowMsg "   (Paket '${P_PACKAGE}' wird entfernt.)" \
+            "" \
+            ""
 
 
     # Gespeicherte Paketinformation inkl. Remove-Hooks auslesen; dazu brauchen wir den Hash
@@ -802,9 +807,8 @@ EOF
     loadRemoveHooks "$h_hsh"
     getInstallerTargets
 
-    # Warnung bei Verwendung von Hooks; Zugriffsrechte prüfen, ggf. Kennwort abfragen
+    # Warnung bei Verwendung von Hooks
     usesRemoveHooks && showHookWarning
-    checkPermissions
 
     P_SHOW_SYNOPSIS=1
 
@@ -844,6 +848,7 @@ EOF
     #                 u.U. mit einer Shell-Funktion gleichen Namens kollidiert! => $hsh
     local current_hash=""
     local occurences
+    local type=""
 
     while IFS="$(printf '\t')" read -r m_filepath m_hsh m_pname m_pversion m_scope _ m_cat _; do
         # Sonderfall Hookdatei: überspringen
@@ -859,17 +864,28 @@ EOF
             continue
         fi
 
+        # Objekttyp ermitteln
+        if [ -L "$m_filepath" ]; then
+            type="L"
+        elif [ -d "$m_filepath" ]; then
+            type="V"
+        elif [ -e "$m_filepath" ]; then
+            type="D"
+        else
+            type=" "
+        fi
+
         # Existenz der Datei und ggf. Hash prüfen
         if [ ! -L "$m_filepath" ]; then
             if [ ! -e "$m_filepath" ]; then
-                cdepShowWarning "Nicht gefunden: $m_filepath"
+                cdepShowWarning "${type}: Nicht gefunden: $m_filepath"
                 err_notfound=$((err_notfound + 1))
                 continue
             fi
 
             current_hash="$(getFileHash "$m_filepath")"
             if isFalse "$P_OPT_FORCE" && [ "$current_hash" != "$m_hsh" ]; then
-                cdepShowWarning "Überspringe $m_filepath (Hash abweichend)"
+                cdepShowWarning "${type}: Überspringe $m_filepath (Hash abweichend)"
                 err_hash=$((err_hash + 1))
                 continue
             fi
@@ -890,18 +906,18 @@ EOF
         # Wenn die Datei von mehreren Paketversionen verwendet wird,
         # mit nächster Datei fortfahren
         if [ "$occurences" -gt 1 ]; then
+            cdepShowWarning "${type}: Überspringe $m_filepath (in Verwendung)"
             err_inuse=$((err_inuse + 1))
             continue
         fi
 
         # Datei entfernen
         if isTrue "$P_OPT_DRYRUN"; then
-            cdepShowMsg "  X  $m_filepath"
+            cdepShowMsg "  X  ${type}: $m_filepath"
         elif cdepSafeRun rm -f "$m_filepath"; then
-            cdepShowMsg "  X  $m_filepath"
-            removeDir "$(dirname "$m_filepath")"
+            cdepShowMsg "  X  ${type}: $m_filepath"
+            removeDir "$(dirname "$m_filepath")" || true
         else
-            cdepShowWarning "Löschen fehlgeschlagen: $m_filepath"
             err_rm=$((err_rm + 1))
         fi
     done <<EOF
@@ -917,27 +933,36 @@ EOF
 
 
     # Gesamtzahl der Fehler errechnen
-    err_count=$((err_hash + err_notfound + err_invalid + err_rm ))
+    err_count=$((err_hash + err_invalid + err_rm ))
 
 
     # Projektverzeichnis, Manifestdatei und Hookdatei entfernen, wenn möglich
     if isTrue "$P_OPT_DRYRUN"; then
         echo
-        cdepShowMsg "  X  HOOKDATEI $hook_file"
-        cdepShowMsg "  X  PROJEKTVERZEICHNIS $P_BASE_TARGET"
-        cdepShowMsg "  X  MANIFESTDATEI $manifest_file"
+        cdepShowMsg "  X  Hookdatei.........: $hook_file"
+        cdepShowMsg "  X  Manifestdatei.....: $manifest_file"
+        cdepShowMsg "  X  Projektverzeichnis: $P_BASE_TARGET"
     else
         echo
         # Die Manifest- und Hookdatei nur löschen, wenn das komplette Paket entfernt wurde
         if [ "$err_count" -eq 0 ]; then
             [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
-            cdepSafeRun rm -f "$hook_file" "MSG:  X  HOOKDATEI $hook_file"
-            removeDir "$P_TARGET_HOOKS"
-            cdepSafeRun rm -f "$manifest_file" "MSG:  X  MANIFESTDATEI $manifest_file"
-            removeDir "$P_TARGET_MANIFEST"
+            cdepSafeRun rm -f "$hook_file" "MSG:  X  Hookdatei..........: $hook_file"
+            removeDir "$P_TARGET_HOOKS" || true
+            cdepSafeRun rm -f "$manifest_file" "MSG:  X  Danifestdatei......: $manifest_file"
+            removeDir "$P_TARGET_MANIFEST" || true
+        else
+            cdepShowWarning "Manifest- und Hookdatei werden noch benötigt" \
+                            "(Paket nicht vollständig entfernt)"
+            err_inuse=$((err_inuse + 2))
         fi
-        removeDir "$(getCdeployDir "$P_OPT_SCOPE")"
-        removeDir "$P_BASE_TARGET" "  X  PROJEKTVERZEICHNIS $P_BASE_TARGET"
+        # internes Verzeichnis (keine Warnmeldung wenn nicht leer!)
+        local dir;  dir="$(getCdeployDir "$P_OPT_SCOPE")"
+        removeDir "$dir" "  X  cdeploy Verzeichnis: $dir" || true
+        # Installationsverzeichnis
+        if ! removeDir "$P_BASE_TARGET" "  X  Projektverzeichnis.: $P_BASE_TARGET"; then
+            cdepShowWarning "Das Projektverzeichnis ist noch nicht leer"
+        fi
     fi
 
     # Abschluss
@@ -948,50 +973,36 @@ EOF
     else
         cdepShowMsg "" \
                 "" \
-                "Das Paket '$P_PACKAGE' konnte nicht vollständig entfernt werden."
+                "Das Paket '$P_PACKAGE' wurde nicht vollständig entfernt."
     fi
 
     case "$err_hash" in
         0) ;;  # keine Ausgabe
         1) cdepShowMsg  \
-            "" \
-            "Hinweis: Eine Datei wurde nicht entfernt, da sie seit der Installation" \
-            "         geändert wurde. Diese Datei kann mit der Option '--force'"\
-            "         entfernt werden." ;;
+            "- 1 Datei wurde geändert (siehe Option '--force')." ;;
         *) cdepShowMsg \
-            "" \
-            "Hinweis: $err_hash Dateien wurden nicht entfernt, da sie seit der Installation" \
-            "         geändert wurden. Diese Dateien können mit der Option '--force'" \
-            "         entfernt werden." ;;
+            "- $err_hash Dateien wurden geändert (siehe Option '--force')." ;;
     esac
 
     case "$err_inuse" in
         0) ;; # keine Ausgabe
         1) cdepShowMsg \
-            "" \
-            "Hinweis: Eine Datei wurde nicht entfernt, da sie von mindestens einer weiteren" \
-            "         Version des Pakets '$P_PACKAGE' verwendet wird." ;;
+            "- 1 Datei wird noch benötigt." ;;
         *) cdepShowMsg \
-            "" \
-            "Hinweis: $err_inuse Dateien wurden nicht entfernt, da sie von mindestens einer" \
-            "         weiteren Version des Pakets '$P_PACKAGE' verwendet wird." ;;
+            "- $err_inuse Dateien werden noch benötigt." ;;
     esac
 
     local remaining;  remaining=$((err_invalid + err_notfound ))
     case "$remaining" in
         0) ;; # keine Ausgabe
-        1) cdepShowMsg  "" \
-                    "Hinweis: Eine Datei wurde nicht gefunden." ;;
-        *) cdepShowMsg  "" \
-                    "Hinweis: $remaining Dateien wurden nicht gefunden." ;;
+        1) cdepShowMsg  "- 1 Datei wurde nicht gefunden." ;;
+        *) cdepShowMsg  "- $remaining Dateien wurden nicht gefunden." ;;
     esac
 
     case "$err_rm" in
         0) ;; # keine Ausgabe
-        1) cdepShowMsg  "" \
-                    "Hinweis: Eine Datei konnte nicht gelöscht werden." ;;
-        *) cdepShowMsg  "" \
-                    "Hinweis: $err_rm Dateien konnten nicht gelöscht werden." ;;
+        1) cdepShowMsg  "- 1 Datei konnte nicht gelöscht werden." ;;
+        *) cdepShowMsg  "- $err_rm Dateien konnten nicht gelöscht werden." ;;
     esac
 
     quit 0
@@ -1014,13 +1025,13 @@ leichtgewichtiges, Bash-kompatibles Deployment-System für Softwarepakete
 .SH BESCHREIBUNG
 \fBcdeploy\fR ist ein leichtgewichtiges, portables Deployment-System für Softwarepakete, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist.
 
-Es ermöglicht lokale und globale Installationen und verwaltet installierte Dateien über transparente Manifestdateien mit Hash-Prüfsummen. Für die globale Installation werden Administratorrechte benötigt.
+Es ermöglicht lokale und globale Installationen und verwaltet installierte Dateien über transparente Manifestdateien mit Hash-Prüfsummen. Das Skript prüft, ob der Zugriff auf eines der Zielverzeichnisse Administratorrechte benötigt und verlangt ggf. ein Login. Eventuell bestehende \fIsudo\fR-Sitzungen werden bei Aufruf des Skripts beendet.
 
 Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschließlich Standard-Unix-Werkzeuge. Es ist daher vor allem für Administratoren interessant, die es zum Einrichten und Warten von Rechnern verwenden können.
 
 .I PAKETSTRUKTUR
 .LP
-Die typische Struktur eines cdeploy-Pakets ist wie folgt:
+Die typisches cdeploy-Pakets hat diese Struktur:
 
 .RS
 .nf
@@ -1037,7 +1048,7 @@ Die typische Struktur eines cdeploy-Pakets ist wie folgt:
 
 Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR \fIetc\fR \fIlib\fR und \fIman\fR kopiert werden. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
 
-Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert. Sie können frei gewählt werden. Wenn der aktuelle Benutzer keinen Zugriff auf eines der Zielverzeichnisse hat, wird das sudo-Kennwort abgefragt.
+Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von einem Leer- oder Tabulatorzeichen und dem Zielpfad. Leerzeilen und Kommentare werden ignoriert.
 
 .SH BEFEHLE
 .TP
@@ -1079,51 +1090,51 @@ Zeigt die Versions- und Copyright-Informationen von \fBcdeploy\fR an.
 
 .SH OPTIONEN
 .TP
-.B --compressed | -c \fR--- (Befehl: pack)
+.B --compressed | -c\fR --- (Befehl: pack)
 Erstellt ein komprimiertes Archiv. Standardmäßig werden Archive unkomprimiert erstellt, da sie zwar größer sind, aber schneller verarbeitet werden können. Komprimierte Archive sind dagegen kleiner, aber in der Verarbeitung langsamer.
 .TP
-.B --copyright=".." \fR--- (Befehl: create)
+.B --copyright=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets die Copyright-Informationen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --creator=".." \fR--- (Befehl: create)
+.B --creator=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets den Namen des Erstellers ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --description=".." \fR--- (Befehl: create)
+.B --description=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets eine Beschreibung ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --dry-run | -d \fR--- (Befehle: install, remove)
+.B --dry-run | -d\fR --- (Befehle: install, remove)
 Führt einen Testlauf für die Installation/das Entfernen eines Pakets aus. Es werden hierbei keine Dateien hinzugefügt, entfernt oder geändert!
 .TP
-.B --force | -f \fR--- (Befehl: remove)
+.B --force | -f\fR --- (Befehl: remove)
 Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer Intallation geändert wurden. Mit --force werden auch diese Dateien entfernt.
 .TP
-.B --global | -g \fR--- (Befehle: install, remove)
+.B --global | -g\fR --- (Befehle: install, remove)
 Führt die Installation oder Entfernung im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
 .TP
-.B --hook-parameters=".." | -p=".." \fR--- (Befehle: install, remove)
+.B --hook-parameters=".." | -p=".."\fR --- (Befehle: install, remove)
 Spezifiziert Parameter für die definierten Hooks. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
 .TP
-.B --local | -l \fR--- (Befehle: install, remove)
+.B --local | -l\fR --- (Befehle: install, remove)
 Führt die Operation im benutzerspezifischen Verzeichnis aus.
 .TP
-.B --name=".." \fR--- (Befehl: create)
+.B --name=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets den Paketnamen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird..TP
 .B --quiet | -q
 Unterdrückt alle Ausgaben, Warn- und Fehlermeldungen. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --url=".." \fR--- (Befehl: create)
+.B --url=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets die Download-URL ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --use-hooks | -u \fR--- (Befehle: install, remove)
+.B --use-hooks | -u\fR --- (Befehle: install, remove)
 Erlaubt die Nutzung von Hooks und verhindert die Sicherheitsabfrage bei der Ausführung. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --verbose | -v \fR--- (Befehl: info)
+.B --verbose | -v\fR --- (Befehl: info)
 Gibt zusätzlich zu den Metadaten eines Pakets auch alle enthaltenen Dateien und deren Zielverzeichnisse aus.
 .TP
-.B --version=".." \fR--- (Befehl: create)
+.B --version=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets die Paketversion ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --yes | -y \fR--- (Befehl: remove)
+.B --yes | -y\fR --- (Befehl: remove)
 Beantwortet die Sicherheitsabfrage zum Entfernen eines Pakets automatisch mit 'ja'. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 
 
@@ -1186,7 +1197,7 @@ Liefert das Basis-Installationsverzeichnis.
 cdepGetHookParameter\fR <name> [default]
 Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
 .TP
-cdepGetPackageInfo\fr [divider]
+cdepGetPackageInfo\fR [divider]
 Liefert den Paketnamen zusammen mit der Versionsnummer. Der Optionale Parameter \fIdivider\fR definiert das Trennzeichen zwischen beiden Angaben. Standardmäßig wird ein Bindestrich (`-`) verwendet.
 .TP
 cdepSafeRun\fR <command> ['MSG:'<success_message>]
@@ -1450,7 +1461,7 @@ cdepGetPackageInfo() {
         CDEP_PACKAGE_NAME="tools"
     fi
 
-    if isEmpty "$CDEP_PACKAGE_VERSION"; then
+    if [ -z "$CDEP_PACKAGE_VERSION" ]; then
         echo "$CDEP_PACKAGE_NAME"
     else
         echo "${CDEP_PACKAGE_NAME}${divider}${CDEP_PACKAGE_VERSION}"
@@ -1506,7 +1517,7 @@ cdepSafeRun() {
     # zurückgeben.
     if [ "$status" -ne 0 ]; then
         local err_msg="${output##*:}"
-        cdepShowError 0 "${err_msg#"${err_msg%%[! ]*}"}"
+        cdepShowError 0 "${err_msg#"${err_msg%%[! ]*}"}: $target"
         return $status
     fi
 
@@ -1581,7 +1592,9 @@ cdepShowWarning() {
         shift
 
         printf "???? %s\n" "$line"
-        printf "  ?? %s\n" "$@"
+        if [ "$#" -gt 0 ]; then
+            printf "  ?? %s\n" "$@"
+        fi
     fi
 }
 
@@ -1700,15 +1713,15 @@ checkPackage() {
 }
 
 
-## Zugriffsrechte (Schreibrechte) für übergebenes Objekt prüfen; wenn nötig, sudo-Kennwort
-## abfragen
+## Zugriffsrechte (Schreibrechte) prüfen; wenn nötig, sudo-Kennwort abfragen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 checkPermissions() {
     # Wenn die Installation global erfolgt, prüfen wir zuerst die Verzeichnisse ./bin,
     # ./etc, ./lib und ./man. Wenn in einem dieser Verzeichnisse Dateien sind, Kennwort
     # abfragen und Prüfung beenden.
     if [[ $P_OPT_SCOPE == "global" ]]; then
-        for d in "$P_TARGET_BIN" "$P_TARGET_LIB" "$P_TARGET_ETC" "$P_TARGET_MAN"; do
+        for d in "$P_TARGET_BIN" "$P_TARGET_LIB" "$P_TARGET_ETC" "$P_TARGET_MAN" \
+                    "$P_TARGET_MANIFEST"; do
             if ! dirIsEmpty "$d"; then
                 sudoLogin
                 return 0
@@ -2089,17 +2102,17 @@ getFileHash() {
     if command -v sha256sum >/dev/null 2>&1; then
         if [ -d "$filepath" ]; then
             ( cd "$filepath" && find . -type f -exec sha256sum {} + | sort | \
-                    sha256sum | awk '{print $1}' )
+                    $P_USE_SUDO sha256sum | awk '{print $1}' )
         else
-            sha256sum "$filepath" | awk '{print $1}'
+            $P_USE_SUDO sha256sum "$filepath" | awk '{print $1}'
         fi
         return 0
     elif command -v shasum >/dev/null 2>&1; then
         if [ -d "$filepath" ]; then
             ( cd "$filepath" && find . -type f -exec shasum -a 256 {} + | sort | \
-                    shasum -a 256 | awk '{print $1}' )
+                    $P_USE_SUDO shasum -a 256 | awk '{print $1}' )
             else
-                shasum -a 256 "$filepath" | awk '{print $1}'
+                $P_USE_SUDO shasum -a 256 "$filepath" | awk '{print $1}'
             fi
         return 0
     fi
@@ -2387,8 +2400,7 @@ loadRemoveHooks() {
             local tmpfile;  tmpfile="$(mktemp "/tmp/${P_PACKAGE}.XXXXXX")" || \
                                 cdepShowError 1 "Konnte temporäre Datei für Hook nicht erstellen."
             P_TMP_OBJECTS+=("$tmpfile")
-            #if cdepSafeRun gunzip -c "${hook_path}" > "$tmpfile"; then
-            if gunzip -c "$hook_path" > "$tmpfile"; then
+            if ($P_USE_SUDO gunzip -c "$hook_path" > "$tmpfile"); then
                 loadConfigFile "$tmpfile"
             else
                 cdepShowError 1 "Die Paketinformationen konnten nicht gelesen werden."
@@ -2762,15 +2774,30 @@ readManifestFile() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 removeDir() {
     local directory="$1"
+    shift
+
     if [ -d "$directory" ]; then
         # Versuchen das Verzeichnis zu entfernen. Evtl. Fehlermeldungen werden unterdrückt,
         # die sind in diesem Fall uninteressant.
-        rmdir "$directory" 2>/dev/null || true
-        if [ $# -eq 2 ]; then
-            cdepShowMsg "$2"
+        local output=""
+        local status=0
+
+        if isFalse "$P_OPT_DRYRUN"; then
+            set +e
+            $P_USE_SUDO rmdir "$directory" 2> /dev/null #|| true
+            status=$?
+            set -e
+        fi
+
+        if [ "$status" -eq 0 ] && [ $# -gt 0 ]; then
+            cdepShowMsg "$@"
         fi
     fi
+
+    return "$status"
 }
+
+
 ## Speichert die Remove-Hooks (Paket config-Datei) für ein späteres Entfernen des Pakets
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 saveRemoveHooks() {
@@ -2913,10 +2940,10 @@ showSyntaxAndExit() {
             "        cdeploy pack [--compressed] <archive>.cdp <package>" \
             "        cdeploy remove --global|--local [--use-hooks] [--force] <package>" \
             "        cdeploy version"
-
     quit 255
-}
 
+
+}
 
 ## sudo-Login
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
