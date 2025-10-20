@@ -1048,7 +1048,7 @@ Die typisches cdeploy-Pakets hat diese Struktur:
 
 Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR \fIetc\fR \fIlib\fR und \fIman\fR kopiert werden. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
 
-Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von einem Leer- oder Tabulatorzeichen und dem Zielpfad. Leerzeilen und Kommentare werden ignoriert.
+Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von einem Tabulatorzeichen und dem Zielpfad. Leerzeilen und Kommentare werden ignoriert.
 
 .SH BEFEHLE
 .TP
@@ -2035,7 +2035,7 @@ freeCopy() {
         { cdepShowWarning "Keine Konfigurationsdatei für das Kopieren gefunden."; return; }
 
     set +e
-    while IFS=$'\t ' read -r src dest || [ -n "$src" ]; do
+    while IFS=$'\t' read -r src dest || [ -n "$src" ]; do
         # Kommentare und leere Zeilen überspringen
         [[ -z "$src" || "$src" =~ ^# ]] && continue
 

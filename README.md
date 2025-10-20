@@ -38,7 +38,7 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 ## Architekturüberblick
 
-- Vollständig in Shell geschrieben. Aktuell Bash-kompatibel, für die nächste Version ist vollständige POSIX-Kompatibilität angestrebt
+- Vollständig in Shell geschrieben. Aktuell Bash-kompatibel, für die nächste Version ist vollständige POSIX-Kompatibilität angestrebt.
 - Zentrale Methoden zur Ausgabe von Informationen, Warn- und Fehlermeldungen: `cdepShowMsg`, `cdepShowWarning` und `cdepShowError`.
 - Zentrale Methode zum Ausführen von Dateioperationen: `cdepSafeRun`.
 - Automatisches herunterladen von Paketen, wenn diese als URL angegeben werden (`http`, `https`, `ftp`, `file`).
@@ -47,6 +47,8 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 - Hooks für die individuelle Erweiterung der Befehle `install` und `remove`.
 - API für die Hook-Programmierung.
 - Abfangen von Shell-Signalen per `trap` zum Entfernen temporärer Dateien beim Beenden und bei einem Skriptabbruch.
+- Automatisches Beenden bestehender sudo-Sitzungen beim Skriptstart.
+
 
 
 ### Paketstruktur
