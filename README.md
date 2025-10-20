@@ -152,7 +152,7 @@ Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Pa
 Hooks erweitern die Funktionalität eines Pakets, z. B. durch eigene Aktionen vor oder nach der Installation. *cdeploy* überstütz dabei auch individuelle Parameter für Hooks, die über die Option `--hook-parameter` bzw. `-p` definiert werden. Hook-Parameter bestehen aus Schlüssel-Werte-Paaren. Der Schlüssel beginnt mit dem Paragraphenzeichen (`§`), weshalb dieses Zeichen nicht im Schlüssel oder Wert vorkommen darf. Nach dem Schlüssel kommt ein Gleichheitszeichen (`=`) und dann der Wert. Wenn der Wert Leerzeichen enthält, muss er mit einfachen (`''`) oder doppelten (`""`) Anführungszeichen umschlossen werden. Im ersten Fall dürfen die Werte keine einfachen, im zweiten Fall keine doppelten Anführungszeichen enthalten. Das jeweils gegenteilige Anführungszeichen ist aber erlaubt!
 
 ```bash
-# Ein Beispiel für individuelle Hook-Parameter. Beachten Sie beim 'password'
+# Ein Beispiel für individuelle Hook-Parameter. Achten Sie beim 'password'
 # auf die Verwendung von einfachen Anführungszeichen innerhalb von Doppelten.
 # Der umgekehrte Fall ist ebenfalls möglich.
 
