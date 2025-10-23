@@ -1048,7 +1048,7 @@ Ein typisches cdeploy-Paket hat folgende Struktur:
 
 Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR, \fIetc\fR und \fIlib\fR kopiert werden. Die Datein in \fIman\fR werden in die Systemverzeichniss für Man-Pages kopiert. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
 
-Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von einem Tabulatorzeichen und dem Zielpfad. Leerzeilen und Kommentare werden ignoriert.
+Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von der Zeichenfolge '-->' und dem Zielpfad. Leerzeichen vor und hinter dem '-->' werden entfernt, Leerzeilen und Kommentare werden ignoriert.
 
 .SH BEFEHLE
 .TP
@@ -2023,11 +2023,17 @@ freeCopy() {
         { cdepShowWarning "Keine Konfigurationsdatei für das Kopieren gefunden."; return; }
 
     set +e
-    while IFS=$'\t' read -r src dest || [ -n "$src" ]; do
+    while IFS= read -r src || [ -n "$src" ]; do
         # Kommentare und leere Zeilen überspringen
         [[ -z "$src" || "$src" =~ ^# ]] && continue
 
-        # Quell- und Zielpfad einstellen
+        # Quell- und Zielpfad einstellen; ausgelesene Daten vorher trimmen
+        dest="${src#*-->}"
+        src="${src%%-->*}"
+        src="${src#"${src%%[![:space:]]*}"}"    # links trimmen
+        src="${src%"${src##*[![:space:]]}"}"    # rechts trimmen
+        dest="${dest#"${dest%%[![:space:]]*}"}"
+        dest="${dest%"${dest##*[![:space:]]}"}"
         src_path="$src_base/$src"
         dest_path="$dest"
 
