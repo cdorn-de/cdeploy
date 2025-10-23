@@ -142,7 +142,7 @@ Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Pa
 ```bash
 # Syntax der Datei 'files.conf'
 
-<dateiname>\t<zielpfad>
+[dateiname] --> [zielpfad]
 ```
 
 ***Es können keine kompletten Verzeichnisse kopiert werden! Alle Dateien in Unterverzeichnissen müssen einzeln aufgeführt werden.***
