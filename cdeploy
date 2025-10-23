@@ -2557,7 +2557,11 @@ makePackageInfo() {
             cdepShowMsg ""
         fi
 
-        cdepShowMsg "" "Es befinden sich insgesamt $total Datei(en) im Paket."
+        case "$total" in
+            0) cdepShowMsg "" "Es befinden keine Dateien im Paket." ;;
+            1) cdepShowMsg "" "Es befindet sich 1 Datei im Paket." ;;
+            *) cdepShowMsg "" "Es befinden sich $total Dateien im Paket." ;;
+        esac
         )"
 
 
@@ -3066,9 +3070,7 @@ usesInstallHooks() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usesRemoveHooks() {
     isOverridden hookPreRemove && return 0
-    echo "Kein Pre-Remove"
     isOverridden hookPostRemove && return 0
-    echo "Kein Post-Remove"
     return 1
 }
 
