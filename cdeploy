@@ -757,7 +757,7 @@ commandRemove() {
 
 
     # Hook und Manifestdatei merken, müssen ganz zum Schluss entfernt werden.
-    local manifest_file;  manifest_file="$(getCdeployDir "$P_OPT_SCOPE")/manifests/${P_PACKAGE}.manifest"
+    local manifest_file; manifest_file="$(getCdeployDir "$P_OPT_SCOPE")/manifests/${P_PACKAGE}.manifest"
     local hook_file;  hook_file="$(getCdeployDir "$P_OPT_SCOPE")/hooks/${P_PACKAGE}.hook"
 
     # Manifestdatei einlesen
@@ -2035,10 +2035,8 @@ freeCopy() {
         # Quell- und Zielpfad einstellen; ausgelesene Daten vorher trimmen
         dest="${src#*-->}"
         src="${src%%-->*}"
-        src="${src#"${src%%[![:space:]]*}"}"    # links trimmen
-        src="${src%"${src##*[![:space:]]}"}"    # rechts trimmen
-        dest="${dest#"${dest%%[![:space:]]*}"}"
-        dest="${dest%"${dest##*[![:space:]]}"}"
+        src="$(trim "$src")"
+        dest="$(trim "$dest")"
         src_path="$src_base/$src"
         dest_path="$dest"
 
@@ -2529,8 +2527,10 @@ makePackageInfo() {
             local filecount=0
 
             for line in "${lines[@]}"; do
-                src=${line%%[[:space:]]*}
-                target=${line#*[[:space:]]}
+                src="${line%%-->*}"
+                src="$(trim "$src")"
+                target="${line#*-->}"
+                target="$(trim "$target")"
 
                 # Verzeichnisanteil extrahieren:
                 if [[ "$target" == */ ]]; then
@@ -2944,6 +2944,7 @@ showSyntaxAndExit() {
 
 }
 
+
 ## sudo-Login
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 sudoLogin() {
@@ -3011,6 +3012,16 @@ toLowercase() {
 toUppercase() {
     local text="$1"
     echo "${text^^}"
+}
+
+
+## Entfernt alle Leerzeichen am Anfang und Ende eines Strings
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+trim() {
+    local src="$1"
+    src="${src#"${src%%[![:space:]]*}"}"    # links trimmen
+    src="${src%"${src##*[![:space:]]}"}"    # rechts trimmen
+    printf '%s' "$src"
 }
 
 
