@@ -878,14 +878,16 @@ EOF
         # Existenz der Datei und ggf. Hash prüfen
         if [ ! -L "$m_filepath" ]; then
             if [ ! -e "$m_filepath" ]; then
-                cdepShowWarning "${type}: Nicht gefunden: $m_filepath"
+                cdepShowWarning "${type} Nicht gefunden: $m_filepath"
                 err_notfound=$((err_notfound + 1))
                 continue
             fi
 
             current_hash="$(getFileHash "$m_filepath")"
             if isFalse "$P_OPT_FORCE" && [ "$current_hash" != "$m_hsh" ]; then
-                cdepShowWarning "${type}: Überspringe $m_filepath (Hash abweichend)"
+                echo "current: $current_hash"
+                echo "expected: $m_hsh"
+                cdepShowWarning "${type} Überspringe $m_filepath (Hash abweichend)"
                 err_hash=$((err_hash + 1))
                 continue
             fi
@@ -906,16 +908,16 @@ EOF
         # Wenn die Datei von mehreren Paketversionen verwendet wird,
         # mit nächster Datei fortfahren
         if [ "$occurences" -gt 1 ]; then
-            cdepShowWarning "${type}: Überspringe $m_filepath (in Verwendung)"
+            cdepShowWarning "${type} Überspringe $m_filepath (in Verwendung)"
             err_inuse=$((err_inuse + 1))
             continue
         fi
 
         # Datei entfernen
         if isTrue "$P_OPT_DRYRUN"; then
-            cdepShowMsg "  X  ${type}: $m_filepath"
+            cdepShowMsg "  X  ${type} $m_filepath"
         elif cdepSafeRun rm -f "$m_filepath"; then
-            cdepShowMsg "  X  ${type}: $m_filepath"
+            cdepShowMsg "  X  ${type} $m_filepath"
             removeDir "$(dirname "$m_filepath")" || true
         else
             err_rm=$((err_rm + 1))
@@ -949,7 +951,7 @@ EOF
             [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
             cdepSafeRun rm -f "$hook_file" "MSG:  X  Hookdatei..........: $hook_file"
             removeDir "$P_TARGET_HOOKS" || true
-            cdepSafeRun rm -f "$manifest_file" "MSG:  X  Danifestdatei......: $manifest_file"
+            cdepSafeRun rm -f "$manifest_file" "MSG:  X  Manifestdatei......: $manifest_file"
             removeDir "$P_TARGET_MANIFEST" || true
         else
             cdepShowWarning "Manifest- und Hookdatei werden noch benötigt" \
@@ -2000,7 +2002,10 @@ finalCleanup() {
     done
 
     # Verwendung von sudo deaktivieren
-    P_USE_SUDO=""
+    if [ "$P_USE_SUDO" != "" ]; then
+        P_USE_SUDO=""
+        sudo -k
+    fi
 }
 
 
@@ -2272,7 +2277,7 @@ installManpages() {
                  "MSG:  -> $target_dir/$(basename "$manfile").gz"; then
                 cdepSafeRun chmod 644 "$target_dir/$(basename "$manfile")"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
-                if cdepSafeRun gzip -f "$target_dir/$(basename "$manfile")"; then
+                if cdepSafeRun gzip -n -9 -f "$target_dir/$(basename "$manfile")"; then
                     manifestAppend "$target_dir/$(basename "$manfile".gz)" "man"
                 else
                     manifestAppend "$target_dir/$(basename "$manfile"*)" "man"
@@ -2767,6 +2772,7 @@ readManifestFile() {
 ## Entfernt das übergeordnete Verzeichnis
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 removeDir() {
+    local status=0
     local directory="$1"
     shift
 
@@ -2774,7 +2780,6 @@ removeDir() {
         # Versuchen das Verzeichnis zu entfernen. Evtl. Fehlermeldungen werden unterdrückt,
         # die sind in diesem Fall uninteressant.
         local output=""
-        local status=0
 
         if isFalse "$P_OPT_DRYRUN"; then
             set +e
