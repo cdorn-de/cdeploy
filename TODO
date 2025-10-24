@@ -1,0 +1,18 @@
+Allgemein
+===============
+[ ] Hook-API kontinuierlich erweitern
+
+
+
+Version 1.1
+===============
+[ ] Installation von Man-Pages an die von Programmen/Skripten angleiche
+[ ] Schutz von bestehenden Installationen bei Install
+    [ ] Sicherheitsabfrage vor dem Überschreiben
+    [ ] Option --yes zum Umgehen der Sicherheitsabfrage
+[ ] Ausgabe weiter optimieren
+    [ ] automatische Anpassung der Ausgabebreite
+    [ ] Standardbreite: 80 Zeichen
+[ ] Remove: Mehrfach verwendete Dateien müssen über ALLE Manifeste gesucht werden,
+            nicht nur innerhalb eines Pakets! Grund: Bibliotheken in .lib/
+[ ] Parameter für Kennwort zum sudo-Login
