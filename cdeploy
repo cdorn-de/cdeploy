@@ -313,7 +313,7 @@ parseParameters() {
             # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
             # die haben wir eingangs bereits ermittelt
             create|\
-            help|-p|--help|\
+            help|-h|--help|\
             info|\
             install|\
             list|ls|\
@@ -375,11 +375,7 @@ parseParameters() {
             --hook-parameters=*|-p=*)
                 assertAction "hook parameters" install remove
                 assertIsEmpty "hook parameters" "$P_HOOK_PARAMETERS"
-                P_HOOK_PARAMETERS="${arg#*=}"
-                P_HOOK_PARAMETERS="${P_HOOK_PARAMETERS%\"}"
-                P_HOOK_PARAMETERS="${P_HOOK_PARAMETERS#\"}"
-                P_HOOK_PARAMETERS="${P_HOOK_PARAMETERS%\'}"
-                P_HOOK_PARAMETERS="${P_HOOK_PARAMETERS#\'}" ;;
+                P_HOOK_PARAMETERS="${arg#*=}" ;;
             --local|-l)
                 assertAction scope install remove
                 assertIsEmpty "scope" "$P_OPT_SCOPE"
@@ -1398,47 +1394,59 @@ cdepGetBaseTarget() {
 ## der Hook-Parameter nicht existiert
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdepGetHookParameter() {
-    local key="$1"
-    local default=""
-    local name=""
-    local result=""
-    local part=""
-    local rest="$P_HOOK_PARAMETERS"
+    local name="$1"
+    local default="${2:-}"
+    local parameters;  parameters="$(trim "$P_HOOK_PARAMETERS")"
+    local key val keyval
 
-    if [ $# -gt 1 ]; then
-        default="$2"
-    fi
-
-    while [ -n "$rest" ]; do
-        case "$rest" in
-            §*=*)
-                part=${rest#§}     # alles nach ?
-                name=${part%%=*}    # bis '='
-                if [ "$name" != "$key" ]; then
-                    rest=${part#*=}  # Rest trotzdem weitergeben
-                    continue
-                fi
-
-                rest=${part#*=}     # Rest nach '='
-                case "$rest" in
-                    \'*\') val=${rest#\'}; val=${val%%\'*}; rest=${rest#*\'} ;;
-                    \"*\") val=${rest#\"}; val=${val%%\"*}; rest=${rest#*\"} ;;
-                    §*)    val=${rest%%§*}; rest="?${rest#*§}" ;;
-                    *)     val=$rest; rest= ;;
-                esac
-                if [ "$name" = "$key" ]; then
-                    result=$val
-                    break
-                fi
+    # Schleife läuft, solange noch Parameter übrig sind
+    while [ -n "$parameters" ]; do
+        # Wenn § im String vorhanden ist → ersten Teil abtrennen
+        case "$parameters" in
+            *§*)
+                keyval=${parameters%%§*}
+                parameters=${parameters#*§}
                 ;;
             *)
-                val="$default"
-                break
+                keyval=$parameters
+                parameters=""
                 ;;
         esac
+
+        # Leere oder whitespace-only Segmente überspringen
+        keyval="$(trim "$keyval")"
+        [ -z "$keyval" ] && continue
+
+        # Key und Value bestimmen
+        case "$keyval" in
+            *=*)
+                key=${keyval%%=*}
+                val=${keyval#*=}
+                ;;
+            *)
+                key=$keyval
+                val=""
+                ;;
+        esac
+
+        key="$(trim "$key")"
+        [ "$key" != "$name" ] && continue
+        val="$(trim "$val")"
+
+        # ggf. Quotes um den Value entfernen
+        case "$val" in
+            \'*\') val=${val#\'}; val=${val%\'} ;;
+            \"*\") val=${val#\"}; val=${val%\"} ;;
+        esac
+
+        # Ergebnis zurückgeben
+        printf '%s' "$val"
+        return 0
     done
 
-    printf '%s' "$result"
+    # Defaultwert zurückgeben
+    printf '%s' "$default"
+    return 0
 }
 
 
@@ -3022,10 +3030,10 @@ toUppercase() {
 ## Entfernt alle Leerzeichen am Anfang und Ende eines Strings
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 trim() {
-    local src="$1"
-    src="${src#"${src%%[![:space:]]*}"}"    # links trimmen
-    src="${src%"${src##*[![:space:]]}"}"    # rechts trimmen
-    printf '%s' "$src"
+    local str="$1"
+    str="${str#"${str%%[![:space:]]*}"}"    # links trimmen
+    str="${str%"${str##*[![:space:]]}"}"    # rechts trimmen
+    printf '%s' "$str"
 }
 
 
