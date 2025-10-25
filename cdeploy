@@ -227,7 +227,7 @@ parseParameters() {
         pack)                   P_ACTION="pack" ;;
         remove)                 P_ACTION="remove" ;;
         version|-V|--version)   P_ACTION="version" ;;
-        *)                      showSyntaxAndExit "Unbekannte Aktion: $1" ;;
+        *)                      showSyntaxAndExit "Unbekannter Befehl: $1" ;;
     esac
 
     shift  # ersten Parameter entfernen
@@ -238,7 +238,7 @@ parseParameters() {
     # wird eine Fehlermeldung ausgegeben.
     if [[ "$P_ACTION" =~ ^(help|list|version)$ ]]; then
         if [[ $# -gt 0 ]]; then
-            showSyntaxAndExit "Diese Aktion benötigt keine Parameter: $P_ACTION"
+            showSyntaxAndExit "Dieser Befehl benötigt keine Parameter: $P_ACTION"
         fi
         return 0
     fi
@@ -320,7 +320,7 @@ parseParameters() {
             pack|\
             remove|\
             version|-V)
-                    showSyntaxAndExit "Es wurde bereits eine Aktion definiert: $P_ACTION" ;;
+                    showSyntaxAndExit "Es wurde bereits ein Befehl definiert: $P_ACTION" ;;
             --)     break ;;
             --*)    # Langoption
                     opts+=("$arg")
@@ -1016,17 +1016,18 @@ commandShowHelpAndExit() {
 .SH NAME
 .TP 10
 cdeploy –
-leichtgewichtiges, Bash-kompatibles Installationssystem für Softwarepakete
+Ein leichtgewichtiges, Bash-kompatibles Installationssystem.
 .SH ÜBERSICHT
 .B cdeploy
 \fIBEFEHL\fR [\fIOPTIONEN\fR] [\fIARCHIV\fR] [\fIPAKET\fR]
 .SH BESCHREIBUNG
-\fBcdeploy\fR ist ein leichtgewichtiges, portables Installationssystem für Softwarepakete, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist. Als Installationspaket können herkömmliche Verzeichnisse oder cdeploy-Archive verwendet werden.
+\fBcdeploy\fR ist ein leichtgewichtiges, portables Installationssystem, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist. Als Installationspaket können herkömmliche Verzeichnisse oder cdeploy-Archive verwendet werden.
 
-Es ermöglicht lokale und globale Installationen und verwaltet installierte Dateien über transparente Manifestdateien mit Hash-Prüfsummen. Das Skript prüft, ob der Zugriff auf eines der Zielverzeichnisse Administratorrechte benötigt und verlangt ggf. ein Login. Eventuell bestehende \fIsudo\fR-Sitzungen werden bei Aufruf des Skripts beendet.
+Es sind sowohl lokale als auch globale Installationen möglich. Die installierten Dateien werden über transparente Manifestdateien mit Hash-Prüfsummen verwaltet. Das Skript prüft, ob der Zugriff auf eines der Zielverzeichnisse Administratorrechte benötigt und verlangt ggf. ein Login. Eventuell bereits bestehende \fIsudo\fR-Sitzungen werden aus Sicherheitsgründen bei Aufruf des Skripts beendet.
 
-Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschließlich Standard-Unix-Werkzeuge. Es ist daher vor allem für Administratoren interessant, die es zum Einrichten und Warten von Rechnern verwenden können.
-
+Das System verzichtet bewusst auf externe Abhängigkeiten und verwendet ausschließlich Standard-Unix-Werkzeuge. Es ist daher vor allem für Administratoren zur Einrichtung und Wartung von Rechnern interessant.
+.sp
+.sp
 .I PAKETSTRUKTUR
 .LP
 Ein typisches cdeploy-Paket hat folgende Struktur:
@@ -1044,29 +1045,29 @@ Ein typisches cdeploy-Paket hat folgende Struktur:
 .fi
 .RE
 
-Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR, \fIetc\fR und \fIlib\fR kopiert werden. Die Datein in \fIman\fR werden in die Systemverzeichniss für Man-Pages kopiert. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, wird – abhängig von der verwendeten Option --local oder --global – in ~/.local/bin oder /usr/local/bin ein Symlink auf jede Datei im Verzeichnis \fIbin\fR angelegt.
+Bei der Installation wird für jedes Paket ein eigenes Verzeichnis angelegt, in das die Verzeichnisse \fIbin\fR, \fIetc\fR und \fIlib\fR kopiert werden. Die Datein in \fIman\fR werden in die Systemverzeichniss für Man-Pages kopiert. Damit nicht jedes installierte Paket in die PATH Variable aufgenommen werden muss, werden in ~/.local/bin bzw. /usr/local/bin Symlinks auf die Dateien im Zielverzeichnis \fIbin\fR angelegt.
 
-Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von der Zeichenfolge '-->' und dem Zielpfad. Leerzeichen vor und hinter dem '-->' werden entfernt, Leerzeilen und Kommentare werden ignoriert.
+Die Zielverzeichnisse der Dateien in \fIfiles\fR werden in der Datei \fIfiles.conf\fR definiert und können frei gewählt werden. In jeder Zeile muss zuerst der Dateiname stehen, gefolgt von der Zeichenfolge '-->' und dem Zielpfad. Leerzeichen vor und hinter dem Dateinamen oder dem Zielpfad werden entfernt, Leerzeilen und Kommentare werden ignoriert.
 
 .SH BEFEHLE
 .TP
 .B create\fR [optionen] \fIPAKET\fR
-Legt ein leeres Installationspaket (Template) als Verzeichnis an. In dieses Verzeichnis können alle zu installierenden Dateien kopiert werden. Zur weiteren Konfiguration des Pakets dienen die Dateien ./cdeploy.conf und ./files/files.conf.
+Legt ein Verzeichnis mit den Standardverzeichnissen und -dateien als Vorlage für ein neues Installationspaket an. In dieses Verzeichnis können alle zu installierenden Dateien kopiert werden. Zur weiteren Konfiguration des Pakets dienen die Dateien ./cdeploy.conf und ./files/files.conf.
 
-Zum Verpacken in einem Archiv für die Weitergabe an Dritte, siehe Befehl \fIpack\fR.
+Dieses Verzeichnis kann direkt mit \fBcdeploy\fR verwendet werden. Für die Weitergabe an Dritte empfiehlt es sich aber mit dem Befehl \fBcdeploy pack\fR eine Archivdatei davon zu erstellen.
 .TP
 .B help
 Gibt diese Hilfeseite aus.
 .TP
 .B info\fR [optionen] \fIPAKET\fR
-Zeigt die Metadaten eines Pakets an (\fIName Version Ersteller Quelle/URL Hash Copyright Beschreibung\fR). Mit der Option --verbose werden auch alle im Archiv enthaltenen Dateien aufgelistet.
+Zeigt die Metadaten (Name, Version, Ersteller, Quelle/URL, Hash, Copyright und Beschreibung) eines Pakets an. Mit der Option --verbose werden auch alle im Archiv enthaltenen Dateien aufgelistet.
 .TP
 .B install\fR [optionen] \fIPAKET\fR
 Installiert ein Paket aus einem lokalen Verzeichnis, einem lokalen Archiv oder einer URL. Es muss zwingend eine der beiden Option --local oder --global verwendet werden.
 
 Die Funktionalität von \fBinstall\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss. (Siehe auch Option --use-hooks.)
 
-Während der Installation wird eine Manifestdatei erstellt, die alle installierten Dateien inklusive deren Hash-Werten enthält. Das Manifest erleichtert das spätere Entfernen eines Pakets und schützt dabei manuell geänderte Datein.
+Während der Installation wird eine Manifestdatei erstellt, die alle installierten Dateien inklusive der Hash-Werte enthält. Das Manifest erleichtert das spätere Entfernen eines Pakets und schützt dabei manuell geänderte Dateien.
 .TP
 .B list
 Listet alle installierten Pakete und Versionen auf.
@@ -1075,13 +1076,13 @@ Listet alle installierten Pakete und Versionen auf.
 Erstellt eine Archivdatei (.cdp) von einem offenen Installationsverzeichnis. Die Archivdatei bietet sich vor allem zur Weitergabe an Dritte an.
 .TP
 .B remove\fR [optionen] \fIPAKET\fR
-Entfernt ein installiertes Paket. Neben dem Paketnamen muss zwingend eine der beiden Optionen --local oder --global verwenendet werden.
+Entfernt ein installiertes Paket. Neben dem \fIPaketnamen\fR muss zwingend eine der beiden Optionen --local oder --global verwenendet werden. Der Paketname kann mit Hilfe des Befehls 'cdeploy list' ermittelt werden.
 
-Standardmäßig werden keine Dateien entfernt, die nach ihrer Installation geändert wurden (siehe auch Option --force). Außerdem werden keine Dateien entfernt, die noch Teil mindestens einer weiteren Version des Pakets sind.
+Standardmäßig werden keine Dateien entfernt, die nach ihrer Installation geändert wurden (siehe auch Option --force). Außerdem werden keine Dateien entfernt, die noch Teil eines anderen Pakets sind.
 
 Die Funktionalität von \fBremove\fR kann durch vor- und/oder nachgeschaltete Skripte (Hooks) erweitert werden. Wegen der potentiellen Gefahrenquelle wird vor der Verwendung von Hooks eine Warnmeldung ausgegeben, die bestätigt werden muss (siehe auch Option --use-hooks).
 
-Erfordert vor dem Entfernen eine Bestätigung.
+Erfordert vor dem Entfernen eine Bestätigung, oder die Verwendung der Option --yes.
 .TP
 .B version
 Zeigt die Versions- und Copyright-Informationen von \fBcdeploy\fR an.
@@ -1089,7 +1090,7 @@ Zeigt die Versions- und Copyright-Informationen von \fBcdeploy\fR an.
 .SH OPTIONEN
 .TP
 .B --compressed | -c\fR --- (Befehl: pack)
-Erstellt ein komprimiertes Archiv. Standardmäßig werden Archive unkomprimiert erstellt, da sie zwar größer sind, aber schneller verarbeitet werden können. Komprimierte Archive sind dagegen kleiner, aber in der Verarbeitung langsamer.
+Erstellt ein komprimiertes Archiv. Standardmäßig sind Archive unkomprimiert, da sie so zwar größer sind, aber schneller verarbeitet werden können. Komprimierte Archive sind dagegen kleiner, dafür in der Verarbeitung aber langsamer.
 .TP
 .B --copyright=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets die Copyright-Informationen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
@@ -1104,21 +1105,21 @@ Trägt beim Erstellen eines leeren Pakets eine Beschreibung ein. Diese Option is
 Führt einen Testlauf für die Installation/das Entfernen eines Pakets aus. Es werden hierbei keine Dateien hinzugefügt, entfernt oder geändert!
 .TP
 .B --force | -f\fR --- (Befehl: remove)
-Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer Intallation geändert wurden. Mit --force werden auch diese Dateien entfernt.
+Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer Intallation geändert wurden. Mit --force werden auch geänderte Dateien entfernt.
 .TP
 .B --global | -g\fR --- (Befehle: install, remove)
-Führt die Installation oder das Entfernen im globalen cdeploy-Verzeichnis aus (erfordert \fBsudo\fR).
+Führt die Installation oder das Entfernen global für alle Benutzer aus. (Siehe auch Option --local.)
 .TP
 .B --hook-parameters=".." | -p=".."\fR --- (Befehle: install, remove)
 Spezifiziert Parameter für die definierten Hooks. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
 .TP
 .B --local | -l\fR --- (Befehle: install, remove)
-Führt die die Installation oder das Entfernen im benutzerspezifischen Verzeichnis aus.
+Führt die die Installation oder das Entfernen lokal nur für den aktuellen Benutzer aus. (Siehe auch Option --global.)
 .TP
 .B --name=".."\fR --- (Befehl: create)
 Trägt beim Erstellen eines leeren Pakets den Paketnamen ein. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
-.B --quiet | -q
+.B --quiet | -q\fR --- (Befehl: alle)
 Unterdrückt alle Ausgaben, Warn- und Fehlermeldungen. Diese Option ist sinnvoll, wenn \fBcdeploy\fR über ein anderes Skript ausgeführt wird.
 .TP
 .B --url=".."\fR --- (Befehl: create)
@@ -1139,26 +1140,26 @@ Beantwortet die Sicherheitsabfrage zum Entfernen eines Pakets automatisch mit 'j
 
 .SH DATEIEN
 .TP
-~/.local/PAKET
+~/.local/<PAKET>
 Standardpfad für lokale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
 .TP
-/usr/local/PAKET
+/usr/local/<PAKET>
 Standardpfad für globale Installationen. Kann über die Paket-Konfigurationsdatei geändert werden.
 .TP
 ~/.local/share/cdeploy
-Lokales Verzeichnis mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+Verzeichnis mit internen Informationen zu den lokalen Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
 /usr/local/share/cdeploy
-Globales Verzeichnis mit internen Informationen zu den Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
+Verzeichnis mit internen Informationen zu den globalen Installationen. Wird in den nachfolgenden Pfaden mit @ symbolisiert.
 .TP
 @/manifests/MANIFEST
-Enthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = cdeploy-Verzeichnis)
+Enthält die vom Paket installierten Dateien inklusive Prüfsummen. (@ = internes Verzeichnis)
 .TP
 @/hooks/HOOKDATEI
-Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat. (@ = cdeploy-Verzeichnis)
+Optional. Enthält die für das Entfernen eines Pakets benötigten Hooks, sofern ein Paket sie implementiert hat. (@ = internes Verzeichnis)
 
 .SH HOOKS
-Hooks sind optionale Shell-Skripte, die von einem Paket implementiert werden können, um den Installations- oder Entfernungsprozess zu erweitern. Die folgenden Hook-Typen werden unterstützt:
+Hooks sind optionale Shell-Skripte, die in der Paket-Konfigurationsdatei implementiert werden können, um den Installations- oder Entfernungsprozess zu erweitern. Die folgenden Hook-Typen werden unterstützt:
 .TP
 .B pre- und post-install
 Werden vor bzw. nach der Installation ausgeführt.
@@ -1167,13 +1168,16 @@ Werden vor bzw. nach der Installation ausgeführt.
 Werden vor bzw. nach dem Entfernen eines Pakets ausgeführt.
 .RE
 .sp
-Vor der Ausführung von Hooks erfolgt eine Sicherheitswarnung.
+Vor der Ausführung von Hooks erfolgt immer eine Warnmeldung, außer es ist die Option --use-hooks gesetzt. Die Warnmeldung erfolgt aus Sicherheitsgründen, da über Hooks theoretisch auch schädlicher Code ausgeführt werden kann.
+
+HOOKS SOLLTEN DESHALB IMMER NUR DANN AUSGEFÜHRT WERDEN, WENN DAS PAKET AUS EINER VERTRAUENSWÜRDIGEN QUELLE STAMMT!
+
 .LP
 .B HOOK-PARAMETER
 .br
 Über den Parameter \fB--hook-parameters\fR (kurz: \fB-p\fR) lassen sich Parameter speziell für Hooks übergeben, ohne dass diese mit den herkömmlichen Parametern von \fBcdeploy\fR kollidieren können.
 
-Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare definiert werden. Wenn die Werte Leer- oder Sonderzeichen enthalten, müssen sie mit einfachen ('') oder doppelten ("") Anführungszeichen begrenzt werden. Innerhalb einfacher Quotes dürfen doppelte Anführungszeichen vorkommen und umgekehrt. Das Paragraphenzeichen (§) ist als Trenner zwischen Parametern reserviert und darf im Wert nicht vorkommen.
+Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare definiert werden – Flags (Schlüssel ohne Wert) sind ebenfalls erlaubt. Wenn die Werte Leer- oder Sonderzeichen enthalten, müssen sie mit einfachen ('') oder doppelten ("") Anführungszeichen begrenzt werden. Innerhalb einfacher Quotes dürfen doppelte Anführungszeichen vorkommen und umgekehrt. Das Paragraphenzeichen (§) ist als Trenner zwischen Parametern reserviert und darf nicht im Schlüssel oder Wert vorkommen.
 .sp
 \fIBeispiele\fR
 .nf
@@ -1184,10 +1188,10 @@ Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare d
 
 .B HOOK-API
 .br
-Für Programmierung von Hooks gibt es verschiedene Hilfsmethoden, um Hooks nahtlos in das System zu integrieren. Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen Umgebungsvariablen in Hooks verwendet werden. Sie dienen zur Beschreibung des Pakets und zum Generieren der Installationspfade und Manifest- und Hookdateien.
+Für die Programmierung von Hooks gibt es verschiedene Hilfsmethoden, um Hooks nahtlos in das System zu integrieren. Neben den hier gelisteten Methoden können auch die weiter unten beschriebenen Umgebungsvariablen verwendet werden. Sie dienen zur Beschreibung des Pakets und zum Generieren der Installationspfade sowie Manifest- und Hookdateien.
 .TP
 cdepGetBaseTarget
-Liefert das Basis-Installationsverzeichnis.
+Liefert das Basis-Installationsverzeichnis für den aktuellen Vorgang.
 .TP
 cdepGetHookParameter\fR <name> [default]
 Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
@@ -1221,7 +1225,7 @@ Ein Fehler ist aufgetreten.
 Das Skript wurde vom Benutzer abgebrochen.
 
 .SH UMGEBUNGSVARIABLEN & KONSTANTEN
-Konstanten beginnen per Konvention mit einem Unterstrich (_), werden komplett in Großbuchstaben geschrieben. Ihre Werte sind unveränderlich.
+Konstanten beginnen per Konvention mit einem Unterstrich (_) und werden komplett in Großbuchstaben geschrieben. Ihre Werte sind unveränderlich.
 .sp
 Umgebungsvariablen werden ebenfalls komplett in Großbuchstaben geschrieben, beginnen aber nicht mit einem Unterstrich (_). Sie sollten ausschließlich über die Konfigurationsdatei \fIcdeploy.conf\fR im Installationspaket definiert werden.
 .TP
@@ -1229,7 +1233,7 @@ _CDEP_SCRIPT_NAME
 Enthält den Namen des Skripts ("cdeploy").
 .TP
 _CDEP_SCRIPT_VERSION
-Enthält die Versionsnummer des Skripts.
+Enthält die Versionsnummer von cdeploy.
 .TP
 _CDEP_PACK_EXT
 Enthält die Dateinamenerweiterung für Archivdateien (.cdp).
@@ -1242,7 +1246,7 @@ Enthält die verwendete Shell.
 .sp
 .TP
 CDEP_PACKAGE_NAME
-Der Name für das Installationspaket.
+Der Name des Installationspakets.
 .TP
 CDEP_PACKAGE_VERSION
 Die Versionsnummer des Installationspakets.
