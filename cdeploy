@@ -561,9 +561,9 @@ EOF
 ## Siehe 'cdeploy help' für mehr Informationen.
 
 # Beispiele:
-# foo.txt ~/Dokumente
-# bar.txt ~/Dokumente/
-# digest ~/Dokumente/foobar.txt
+# foo.txt --> ~/Dokumente
+# bar.txt --> ~/Dokumente/
+# digest --> ~/Dokumente/foobar.txt
 EOF
 
     cdepShowMsg "Das Paket wurde erfolgreich erstellt."
@@ -655,7 +655,7 @@ commandInstall() {
     fi
 
     # Freies Kopieren von Dateien
-    src="${P_PACKAGE}/files"
+    src="${P_PACKAGE%/}/files"
     if [ -d "$src" ] && [ "$(ls -A "$src")" ]; then
         cdepShowMsg "Kopiere Dateien..."
         freeCopy "${src}/files.conf" "$src"
@@ -957,7 +957,7 @@ EOF
     # Hook nach dem Entfernen ausführen
     if isOverridden hookPostRemove; then
         cdepShowMsg "" "Post-Remove Hook ausführen"
-        hookPostInstall
+        hookPostRemove
     fi
 
 
@@ -1646,7 +1646,14 @@ cdepShowWarning() {
 ## Relativen Pfad absolut ausgeben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 absPath() {
-    echo "$(cd "$(dirname -- "$1")" && pwd)/$(basename -- "$1")"
+    local path="$1"
+    # shellcheck disable=SC2088
+    case $path in
+        "~")  path="$HOME" ;;
+        "~/"*) path="${HOME}/${path#~/}" ;;
+    esac
+
+    echo "$(cd "$(dirname -- "$path")" && pwd)/$(basename -- "$path")"
 }
 
 
@@ -2084,8 +2091,8 @@ freeCopy() {
         src="${src%%-->*}"
         src="$(trim "$src")"
         dest="$(trim "$dest")"
-        src_path="$src_base/$src"
-        dest_path="$dest"
+        src_path="${src_base}/${src}"
+        dest_path="$(absPath "$dest")/"
 
         if [ ! -e "$src_path" ]; then
             cdepShowWarning "Die Quelldatei existiert nicht." \
@@ -2111,15 +2118,18 @@ freeCopy() {
 
         # Datei aus dem Paket in das Ziel kopieren
         if [ -d "$dest_path" ] || [[ "$dest_path" == */ ]]; then
+            if [ "${dest_path%/}" != "$dest_path" ]; then
+                dest_path="${dest_path%/}/$(basename -- "$src_path")"
+            fi
             # $dest_path ist ein Verzeichnis
-            if cdepSafeRun cp -uT "$src_path" "$dest_path" \
+            if cdepSafeRun cp -u "$src_path" "$dest_path" \
                  "MSG:  -> V $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
             fi
         else
             # $dest_path ist eine Datei
-            if cdepSafeRun cp -u "$src_path" "$dest_path" \
+            if cdepSafeRun cp -uT    "$src_path" "$dest_path" \
                  "MSG:  -> D $src -> $dest_path"; then
                 manifestAppend "$dest_path" "files"
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
@@ -2412,7 +2422,6 @@ left() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 loadConfigFile() {
     local config_file="$1"
-
     if [[ -f "$config_file" ]]; then
         if ! "$_CDEP_SHELL_BIN" -n "$config_file" 2>/dev/null; then
             cdepShowError 1 "Die Konfigurationsdatei hat ein ungültiges Format." "$config_file"
@@ -2710,7 +2719,7 @@ manifestAppend() {
     local filepath="$1"
     local category="$2"
 
-    [ -f "$filepath" ] || return 1
+    if [ ! -f "$filepath" ]; then return 0; fi
 
     # SHA256 Hash ermitteln
     local hash;  hash="$(getFileHash "$filepath")"
