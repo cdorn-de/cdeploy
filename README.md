@@ -149,27 +149,24 @@ Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Pa
 
 
 
-### Hooks und Parameter
+### Hooks und Hook-Parameter
 
-Hooks erweitern die Funktionalität eines Pakets, z. B. durch eigene Aktionen vor oder nach der Installation. *cdeploy* überstütz dabei auch individuelle Parameter für Hooks, die über die Option `--hook-parameter` bzw. `-p` definiert werden. Hook-Parameter bestehen aus Schlüssel-Werte-Paaren. Der Schlüssel beginnt mit dem Paragraphenzeichen (`§`), weshalb dieses Zeichen nicht im Schlüssel oder Wert vorkommen darf. Nach dem Schlüssel kommt ein Gleichheitszeichen (`=`) und dann der Wert. Wenn der Wert Leerzeichen enthält, muss er mit einfachen (`''`) oder doppelten (`""`) Anführungszeichen umschlossen werden. Im ersten Fall dürfen die Werte keine einfachen, im zweiten Fall keine doppelten Anführungszeichen enthalten. Das jeweils gegenteilige Anführungszeichen ist aber erlaubt!
+Hooks erweitern die Funktionalität eines Pakets durch eigene Aktionen z.B. vor oder nach der Installation. *cdeploy* überstütz dabei auch individuelle Parameter für Hooks. Diese müssen in der Form `--hp-<name>[=".."]` definiert werden. Der Bereich `<name>` kann im Rahmen der Regeln zur Benennung von Parametern frei vergeben werden. Nach dem Schlüssel kommt optional ein Gleichheitszeichen (`=`) und dann ein Wert. Wird kein Wert angegeben, erhält der Parameter den Wert `1`.
 
 ```bash
-# Ein Beispiel für individuelle Hook-Parameter. Achten Sie beim 'password'
-# auf die Verwendung von einfachen Anführungszeichen innerhalb von Doppelten.
-# Der umgekehrte Fall ist ebenfalls möglich.
+# Ein Beispiel für individuelle Hook-Parameter. Der Parameter '--hp-is-admin' wird ohne einen
+# definierten Wert übergeben und wird intern auf '1' gesetzt.
 
-cdeploy install -p="§user='demo' §password="Das Passwort ist 'secret'!" ..."
+cdeploy install -hp-user='demo' -hp-password="Das Passwort ist 'secret'!" --hp-is-admin ..
 ```
 
-Das Paragraphenzeichen (`§`) wurde als Markierung für den Schlüssel gewählt, weil es einerseits im Standard ASCII-Breich liegt, es andererseits aber relativ selten verwendet wird und unter POSIX/Bash keine besondere Bedeutung hat.
-
-Hooks können die Werte von Hook-Parametern mit der Funktion `cdepGetHookParameter` abrufen. Die Methode erwartet als ersten Parameter den Schlüssel. Im optionalen zweiten Methoden-Parameter kann ein Standardwert übergeben werden, für den Fall dass der Hook-Parameter nicht übergeben wurde. Wenn kein Standardwert übergeben wird, liefert die Methode stattdessen einen leeren String.
+Hooks können die Werte von Hook-Parametern mit der Funktion `cdepGetHookParameter` abrufen. Die Methode erwartet als ersten Parameter den Schlüssel (ohne das vorangestellte `--hp-`). Im optionalen zweiten Methoden-Parameter kann ein Standardwert übergeben werden, für den Fall dass der Hook-Parameter nicht übergeben wurde. Wenn kein Standardwert übergeben wird, liefert die Methode stattdessen einen leeren String.
 
 ```bash
 # Wenn ein Hook-Parameter "user" existiert, wird dessen Wert zurückgegeben,
 # andernfalls der Standardwert "defaultuser"
 
-username=$(getHookParam "user" "defaultuser")
+username=$(cdepGetHookParameter "user" "defaultuser")
 ```
 
 
