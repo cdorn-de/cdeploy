@@ -114,6 +114,8 @@ readonly _CDEP_PACK_EXT=".cdp"       # Extension für Paket-Archive
 readonly _CDEP_PACK_EXT_RE="\\.cdp"  # ...zur Verwendung mit RegEx
 readonly _CDEP_SHELL_BIN="${SHELL:-/bin/sh}"
 
+_HP_SEPARATOR=$(printf '\001');  readonly _HP_SEPARATOR  # Trennzeichen für Hook-Parameter
+
 
 # Umgebungsvariablen
 CDEP_PACKAGE_NAME="tools"
@@ -253,9 +255,9 @@ parseParameters() {
     case "$P_ACTION" in
         info|install|pack)
             P_PACKAGE="${!#}"
-            P_PACKAGE_INPUT="$P_PACKAGE"   # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
-            P_PACKAGE_SOURCE="$P_PACKAGE"  # zur Berechnung des Hash
-            set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
+            P_PACKAGE_INPUT="$P_PACKAGE"    # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
+            P_PACKAGE_SOURCE="$P_PACKAGE"   # zur Berechnung des Hash
+            set -- "${@:1:$(($#-1))}"       # letzten Parameter entfernen
 
             # Datei herunterladen, wenn $P_PACKAGE eine URL ist
             # (http://, https://, ftp:// oder file://)
@@ -330,7 +332,7 @@ parseParameters() {
                     local char=""
                     while [ -n "$arg" ]; do
                         char=${arg%"${arg#?}"}  # erstes Zeichen
-                        arg=${arg#?}            # Rest entfernen
+                        arg=${arg#?}            # Zeichen aus Quelle entfernen
                         opts+=("-$char")        # Zum Array hinzufügen
                     done
                     ;;
@@ -341,6 +343,8 @@ parseParameters() {
 
 
     # Optionen auswerten
+    local kv key val
+
     for arg in "${opts[@]}"; do
         case "$arg" in
             # Optionen
@@ -372,10 +376,37 @@ parseParameters() {
                 assertAction scope install remove
                 assertIsEmpty "scope" "$P_OPT_SCOPE"
                 P_OPT_SCOPE="global" ;;
-            --hook-parameters=*|-p=*)
+            --hp-*)
                 assertAction "hook parameters" install remove
-                assertIsEmpty "hook parameters" "$P_HOOK_PARAMETERS"
-                P_HOOK_PARAMETERS="${arg#*=}" ;;
+
+                # Präfix entfernen
+                kv="${arg#--hp-}"
+
+                # Prüfen, ob ein Wert zugewiesen wird
+                case "$kv" in
+                    *=*)
+                        key=${kv%%=*}
+                        val=${kv#*=}
+                        ;;
+                    *)
+                        key=$kv
+                        val="1"  # Flag ohne Wert
+                        ;;
+                esac
+
+                # Umgebende Leerzeichen und evtuelle Quotes entfernen
+                key="$(trim "$key")"
+                val="$(trim "$val")"
+                case "$val" in
+                    \'*\') val=${val#\'}; val=${val%\'} ;;
+                    \"*\") val=${val#\"}; val=${val%\"} ;;
+                esac
+
+                # Schlüssel-Wert-Paar speichern; Format z. B.: <Trennzeichen>key='val'
+                P_HOOK_PARAMETERS="${P_HOOK_PARAMETERS}${_HP_SEPARATOR}${key}='${val}' "
+
+                shift
+                ;;
             --local|-l)
                 assertAction scope install remove
                 assertIsEmpty "scope" "$P_OPT_SCOPE"
@@ -408,7 +439,7 @@ parseParameters() {
                 assertIsFalse "yes" $P_OPT_YES
                 P_OPT_YES=1 ;;
             *)  # Alle anderen Optionen sind unbekannt! Syntax anzeigen und abbrechenl
-                showSyntaxAndExit "Unbekanntes Argument: $arg" ;;
+                showSyntaxAndExit "Unbekanntes Argument: \"$arg\"" ;;
         esac
     done
 
@@ -1110,8 +1141,8 @@ Standardmäßig werden beim Entfernen keine Dateien gelöscht, die seit ihrer In
 .B --global | -g\fR --- (Befehle: install, remove)
 Führt die Installation oder das Entfernen global für alle Benutzer aus. (Siehe auch Option --local.)
 .TP
-.B --hook-parameters=".." | -p=".."\fR --- (Befehle: install, remove)
-Spezifiziert Parameter für die definierten Hooks. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
+.B --hp-<name>=".."\fR --- (Befehle: install, remove)
+Parameter in dieser Form spezifizieren Optionen zur Verwendung in Hooks. Der Bereich \fI<name>\fR kann – gemäß den Regeln zur Benennung von Parametern – frei vergeben werden. Siehe Abschnitt \fBHOOKS\fR für mehr Informationen.
 .TP
 .B --local | -l\fR --- (Befehle: install, remove)
 Führt die die Installation oder das Entfernen lokal nur für den aktuellen Benutzer aus. (Siehe auch Option --global.)
@@ -1175,16 +1206,18 @@ HOOKS SOLLTEN DESHALB IMMER NUR DANN AUSGEFÜHRT WERDEN, WENN DAS PAKET AUS EINE
 .LP
 .B HOOK-PARAMETER
 .br
-Über den Parameter \fB--hook-parameters\fR (kurz: \fB-p\fR) lassen sich Parameter speziell für Hooks übergeben, ohne dass diese mit den herkömmlichen Parametern von \fBcdeploy\fR kollidieren können.
+Entwickler können für ihre Hooks eigene Parameter in der Form \fB--hp-<name>[=(..)]\fR definieren. Der Bereich '<name>' kann im Rahmen der Regeln zur Benennung von Parametern frei vergeben werden. Die Parameter dürfen eine Wertzuweisung haben, oder als einfache Flags (erhalten automatisch den Wert '1') verwendet werden. Die Abfrage der Parameter erfolgt in den Hooks über die Methode \fBcdepGetHookParameter <name>\fR.
 
-Innerhalb von \fB--hook-parameters\fR können beliebige Schlüssel-Werte-Paare definiert werden – Flags (Schlüssel ohne Wert) sind ebenfalls erlaubt. Wenn die Werte Leer- oder Sonderzeichen enthalten, müssen sie mit einfachen ('') oder doppelten ("") Anführungszeichen begrenzt werden. Innerhalb einfacher Quotes dürfen doppelte Anführungszeichen vorkommen und umgekehrt. Das Paragraphenzeichen (§) ist als Trenner zwischen Parametern reserviert und darf nicht im Schlüssel oder Wert vorkommen.
+.I Beispiel
+
+# Skriptaufruf
+.br
+$ cdeploy --hp-foo="bar" ...
+
+# Parameterabfrage im Hook
+.br
+foovar=$(cdepGetHookParameter foo)  # foovar = bar
 .sp
-\fIBeispiele\fR
-.nf
-§user=admin
-§desc="Neuer Benutzer"
-§info='erstellt mit "Standardrechten"'
-.fi
 
 .B HOOK-API
 .br
@@ -1194,7 +1227,7 @@ cdepGetBaseTarget
 Liefert das Basis-Installationsverzeichnis für den aktuellen Vorgang.
 .TP
 cdepGetHookParameter\fR <name> [default]
-Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch: --hook-parameters). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
+Liefert den Wert des Hook-Parameters \fIname\fR (siehe auch Abschnitt: \fIHook-Parameter\fR). Über den optionalen Parameter \fIdefault\fR kann ein Standardwert übergeben werden, für den Fall, dass der Parameter nicht existiert. Wenn \fIdefault\fR nicht angegeben wird, wird ein leerer String zurückgegeben.
 .TP
 cdepGetPackageInfo\fR [divider]
 Liefert den Paketnamen zusammen mit der Versionsnummer. Der Optionale Parameter \fIdivider\fR definiert das Trennzeichen zwischen beiden Angaben. Standardmäßig wird ein Bindestrich (`-`) verwendet.
@@ -1277,8 +1310,8 @@ Lokale Installation eines Pakets.
 cdeploy install --global ./meinpaket.cdp
 Globale Installation eines Pakets.
 .TP 7
-cdeploy install --local --hook-parameters="§name='John Doe'
-           $firma="ACME Corp." $alter=42" ./meinpaket.cdp
+cdeploy install --local --hp-name='John Doe'
+           --hp-firma="ACME Corp." $alter=42 ./meinpaket.cdp
 .br
 Installation mit Parametern für einen Hook.
 .TP 7
@@ -1405,11 +1438,13 @@ cdepGetHookParameter() {
 
     # Schleife läuft, solange noch Parameter übrig sind
     while [ -n "$parameters" ]; do
-        # Wenn § im String vorhanden ist → ersten Teil abtrennen
+        # Wenn _HP_SEPARATOR im String vorhanden ist, ersten Teil abtrennen
         case "$parameters" in
-            *§*)
-                keyval=${parameters%%§*}
-                parameters=${parameters#*§}
+            *"$_HP_SEPARATOR"*)
+                # shellcheck disable=SC2295
+                keyval=${parameters%%${_HP_SEPARATOR}*}
+                # shellcheck disable=SC2295
+                parameters=${parameters#*${_HP_SEPARATOR}}
                 ;;
             *)
                 keyval=$parameters
@@ -2839,7 +2874,7 @@ saveRemoveHooks() {
         manifestAppend "${hook_path}" "hook"
     fi
 
-    cdepShowMsg "Paketinformationen gespeichert."
+    cdepShowMsg "Paketinformationen gespeichert." ""
 }
 
 
@@ -2850,7 +2885,7 @@ showBottomLine() {
     declare -gr _BOTTOM_LINE_SHOWN=1
 
     # Ausgabe im Terminalfenster
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 85 ] && termW=85
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
     local str
 
     if [ "$termW" -lt 40 ]; then
@@ -2909,7 +2944,7 @@ showTitle() {
     if isTrue "${_TITLE_SHOWN:=0}"; then return; fi
     declare -gr _TITLE_SHOWN=1
 
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 85 ] && termW=85
+    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
     local info=""
     if [ "$termW" -ge 40 ]; then
         info="${_CDEP_SCRIPT_NAME} Version ${_CDEP_SCRIPT_VERSION}                                                                      ."
