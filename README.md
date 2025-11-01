@@ -215,12 +215,3 @@ DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTE
 ## Kontakt
 
 Projektseite: https://github.com/cdorn_de/cdeploy
-
-
-
-
-## Nächste Schritte
-
-- Das Skript soll vollständig POSIX-kompatibel werden
-- Angleichen der Installation von man-Pages an die der bin-Dateien
-- Testskripte für typische Szenarien (install, update, remove)
