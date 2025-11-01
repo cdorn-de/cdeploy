@@ -55,85 +55,14 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 Eine typische Paketstruktur sieht folgendermaßen aus:
 
-<table class="tree">
-    <tr>
-        <td class="content" colspan="5">[Paketname]</td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">cdeploy.conf</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr style="border: 0;">
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">bin&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr style="border: 0;">
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">etc&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">files&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td></td>
-        <td class="tree_v" style="width: 1em;"></td>
-        <td class="tree_h"  ></td>
-        <td class="content" rowspan="2">files.conf</td>
-        </tr>
-        <tr>
-        <td class="tree_v" style="width: 1em;"></td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">lib&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">man&thinsp;/</td>
-        </tr>
-        <tr>
-        <td ></td>
-        <td></td>
-    </tr>
-</table>
+    [Paketname]
+        |– cdeploy.conf
+        |– bin/
+        |– etc/
+        |– files/
+        |    |– files.conf
+        |– lib
+        |– man
 
 Die Verzeichnisse `bin`, `etc` und `lib` werden in ein Paket-Verzeichnis kopiert, das speziell für dieses Paket angelegt wird. `man` wird abhängig von der Installation in das lokale bzw. globale `man`-Verzeichnis kopiert.
 
