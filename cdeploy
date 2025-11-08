@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 
 ###########################################################################################
 ##
-##  cdeploy – leichtgewichtiges Bash-kompatibles Installationssystem
+##  cdeploy – leichtgewichtiges POSIX-kompatibles Installationssystem
 ##
 ##  Das Skript wurde als einfaches Hilfstool für Administratoren entwickelt, die häufig
 ##  ihre persönlichen Skripte und Daten auf zu wartenden Rechnern installieren, oder
@@ -54,7 +54,7 @@
 ##  - Hilfsmethoden
 ##  - main()-Methode aufrufen
 ##
-## ========================================================================================
+## ====================#====================================================================
 ##
 ##  RICHTLINIEN
 ##  - FOO_BAR   : globale Variable
@@ -72,27 +72,23 @@
 ## SKRIPT-EINSTELLUNGEN
 ## ========================================================================================
 
-## Skript bei Bedarf im POSIX-Modus ausführen. Dazu müssen auch sämtliche Bash-spezifische
-## Anweisungen durch POSIX-kompatible ersetzt werden!
-#set -o posix
+# Abbruchkriterien für das Skript
+#   -u          : Abbrechen wenn auf eine nicht definierte Variable zugegriffen wird.
+# Wegen Umstellung auf POSIX-Kompatibilität nicht mehr genutzt:
+#   -e          : Abbrechen wenn eine Anweisung einen Returncode ≠ 0 liefert.
+#   -o pipefail : Eine Pipeline beim ersten Fehler abbrechen, nicht erst beim Letzten.
+set -u
 
 
-## Einstellungen für 'micro' Codeeditor (Einstellungen werden als Kommentare geschrieben!)
+## Einstellungen für ShellCheck (Einstellungen werden als Kommentare geschrieben!)
 # shellcheck disable=SC1090     # Fehler: 'non-constant source' beim Laden von Dateien
 # shellcheck disable=SC2317     # Fehler: Befehl unerreichbar
 # shellcheck disable=SC2001     # Fehler: Bash-Anweisung nutzen; Skript soll POSIX-konform werden
 
 
-# Abbruchkriterien für das Skript
-#   -e          : Abbrechen wenn eine Anweisung einen Returncode ≠ 0 liefert.
-#   -u          : Abbrechen wenn auf eine nicht definierte Variable zugegriffen wird.
-#   -o pipefail : Eine Pipeline beim ersten Fehler abbrechen, nicht erst beim Letzten.
-set -euo pipefail
-
-
 # Feldseparator anpassen. Leerzeichen gelten anschließend nicht mehr als Trennzeichen
 # -> Vorteil beim Parsen von Pfaden mit Leerzeichen.
-IFS=$'\n\t'
+IFS=$(printf '\n\t')
 
 
 # Es soll verhindert werden, dass ein noch aktives 'sudo' eine globale (De-)Installation
@@ -109,7 +105,7 @@ sudo -k
 
 # Konstanten
 readonly _CDEP_SCRIPT_NAME="cdeploy"
-readonly _CDEP_SCRIPT_VERSION="0.7 beta"
+readonly _CDEP_SCRIPT_VERSION="0.8 beta"
 readonly _CDEP_PACK_EXT=".cdp"       # Extension für Paket-Archive
 readonly _CDEP_PACK_EXT_RE="\\.cdp"  # ...zur Verwendung mit RegEx
 readonly _CDEP_SHELL_BIN="${SHELL:-/bin/sh}"
@@ -160,7 +156,7 @@ P_TARGET_SYM=""
 P_USE_PAGER=0
 P_USE_SUDO=""
 
-declare -ga P_TMP_OBJECTS=()
+P_TMP_OBJECTS=""  # "Array" für temporäre Dateien
 
 # Formatierungen
 readonly _BOLD="\033[1m"
@@ -178,7 +174,7 @@ readonly _RESET="\033[0m"
 main() {
     # Sicherstellen dass beim Beenden oder Abbrechen des Skriptes korrekt aufgeräumt wird.
     # Nur der Abbruch mit SIGKILL ('kill -9') lässt sich nicht abfangen.
-    trap finalCleanup EXIT INT TERM HUP
+    trap quit EXIT INT TERM HUP
 
 
     # Parameter parsen
@@ -207,13 +203,13 @@ main() {
             showSyntaxAndExit "Ungültige oder unvolständige Anweisung" ;;
     esac
 
-    quit 0
+    exit 0
 }
 
 
 parseParameters() {
     # Wenn keine Parameter übergeben wurden, Syntax anzeigen und beenden
-    if [[ $# -lt 1 ]]; then
+    if [ $# -lt 1 ]; then
         showSyntaxAndExit
     fi
 
@@ -238,30 +234,34 @@ parseParameters() {
     # Einige Aktionen benötigen keine weiteren Parameter. Bei diesen können wir hier
     # abbrechen. Sollten bei diesen Aktionen noch weitere Parameter angegeben sein,
     # wird eine Fehlermeldung ausgegeben.
-    if [[ "$P_ACTION" =~ ^(help|list|version)$ ]]; then
-        if [[ $# -gt 0 ]]; then
-            showSyntaxAndExit "Dieser Befehl benötigt keine Parameter: $P_ACTION"
-        fi
-        return 0
-    fi
+    case "$P_ACTION" in
+        help|list|version)
+            if [ $# -gt 0 ]; then
+                showSyntaxAndExit "Dieser Befehl benötigt keine Parameter: $P_ACTION"
+            fi
+            return 0
+            ;;
+    esac
 
     # Alle anderen Aktionen benötigen weitere Parameter. Eine Fehlermeldung ausgeben
     # und abbrechen, Wenn keine Parameter mehr vorhanden sind.
-    if [[ $# -lt 1 ]]; then
+    if [ $# -lt 1 ]; then
         showSyntaxAndExit "Ungültige oder unvollständige Anweisung"
     fi
 
     # Aktionen, die als letzten Parameter ein Installationspaket erwarten
+    all_args="$(arrayCreateFromArgs "$@")"
+
     case "$P_ACTION" in
         info|install|pack)
-            P_PACKAGE="${!#}"
-            P_PACKAGE_INPUT="$P_PACKAGE"    # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
-            P_PACKAGE_SOURCE="$P_PACKAGE"   # zur Berechnung des Hash
-            set -- "${@:1:$(($#-1))}"       # letzten Parameter entfernen
+            #P_PACKAGE="${!#}"
+            P_PACKAGE="$(arrayLastItem "$all_args")"
+            P_PACKAGE_INPUT="$P_PACKAGE"        # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
+            P_PACKAGE_SOURCE="$P_PACKAGE"       # zur Berechnung des Hash
+            all_args="$(arrayPop "$all_args")"  # letzten Parameter entfernen
 
             # Datei herunterladen, wenn $P_PACKAGE eine URL ist
             # (http://, https://, ftp:// oder file://)
-            local result
             result="$(downloadIfURL "$P_PACKAGE")" || cdepShowError $? "$result"
             P_PACKAGE="$result"
 
@@ -287,30 +287,34 @@ parseParameters() {
             # Hier wird der letzte Parameter als Name der Manifestdatei gewertet, deren
             # Installation entfernt werden soll. Der Wert wird einfach übernommen und erst
             # später weiter geprüft und verarbeitet.
-            P_PACKAGE="${!#}"
+            P_PACKAGE="$(arrayLastItem "$all_args")"
             case "$P_PACKAGE" in
                 *.manifest) P_PACKAGE="${P_PACKAGE%.manifest}" ;;
             esac
-            P_PACKAGE_INPUT="$P_PACKAGE"      # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
-            P_PACKAGE_SOURCE="$P_PACKAGE"     # zur Berechnung des Hash
+            P_PACKAGE_INPUT="$P_PACKAGE"        # zur Anzeige für den Fall, dass $P_PACKAGE entpackt wird
+            P_PACKAGE_SOURCE="$P_PACKAGE"       # zur Berechnung des Hash
             CDEP_PACKAGE_NAME="${P_PACKAGE%-*}" # Versionsnummer für Projektnamen entfernen
-            set -- "${@:1:$(($#-1))}"         # letzten Parameter entfernen
+            all_args="$(arrayPop "$all_args")"  # letzten Parameter entfernen
             ;;
         *)
             ;; # keine Aktion
     esac
 
     # Aktionen, die als letzten Parameter einen Ausgabepfad erwarten
-    if [[ "$P_ACTION" =~ ^(create|pack)$ ]]; then
-        P_OUTPUT="${!#}"
-        set -- "${@:1:$(($#-1))}"  # letzten Parameter entfernen
-    fi
+    case "$P_ACTION" in
+        create|pack)
+            P_OUTPUT="$(arrayLastItem "$all_args")"
+            all_args="$(arrayPop "$all_args")"  # letzten Parameter entfernen
+            ;;
+    esac
 
 
     # Optionen normalisieren
-    local opts=()
+    opts=""
+    while IFS= read -r arg; do
+        # leere Argumente überspringen
+        if [ -z "$arg" ]; then continue; fi
 
-    for arg in "$@"; do
         case "$arg" in
             # Aktionen dürfen an dieser Stelle nicht mehr in der Parameterliste vorkommen,
             # die haben wir eingangs bereits ermittelt
@@ -325,27 +329,34 @@ parseParameters() {
                     showSyntaxAndExit "Es wurde bereits ein Befehl definiert: $P_ACTION" ;;
             --)     break ;;
             --*)    # Langoption
-                    opts+=("$arg")
+                    opts="$(arrayAppend "$opts" "$arg")"
                     ;;
             -*)     # Kurzoption oder Kombination
                     arg=${arg#-}
-                    local char=""
+                    char=""
                     while [ -n "$arg" ]; do
                         char=${arg%"${arg#?}"}  # erstes Zeichen
                         arg=${arg#?}            # Zeichen aus Quelle entfernen
-                        opts+=("-$char")        # Zum Array hinzufügen
+                        opts="$(arrayAppend "$opts" "-$char")"  # Zum Array hinzufügen
                     done
                     ;;
             *)      # Positionsargument - DARF NICHT MEHR VORKOMMEN!
                     showSyntaxAndExit "Unbekannte Option: $arg" ;;
         esac
-    done
+    done <<EOF
+$all_args
+EOF
 
 
     # Optionen auswerten
-    local kv key val
+    kv=""
+    key=""
+    val=""
 
-    for arg in "${opts[@]}"; do
+    while IFS= read -r arg; do
+        # leere Argumente überspringen
+        if [ -z "$arg" ]; then continue; fi
+
         case "$arg" in
             # Optionen
             --compressed|-c)
@@ -441,7 +452,9 @@ parseParameters() {
             *)  # Alle anderen Optionen sind unbekannt! Syntax anzeigen und abbrechenl
                 showSyntaxAndExit "Unbekanntes Argument: \"$arg\"" ;;
         esac
-    done
+    done <<EOF
+$opts
+EOF
 
 
     # Auf Vollständigkeit prüfen
@@ -472,17 +485,18 @@ commandCreate() {
             ""
 
     # Ausgabe prüfen
-    if [[ -e "$P_OUTPUT" ]]; then
+    if [ -e "$P_OUTPUT" ]; then
         cdepShowError 1 "Es gibt bereits ein Objekt mit diesem Namen."
     fi
 
     # Verzeichnisstruktur anlegen
-    mkdir -p "$P_OUTPUT"/{bin,lib,etc,man,files} || {
-        cdepShowError 1 "Das Verzeichnis konnte nicht angelegt werden."
-    }
+    for d in bin lib etc man files; do
+        mkdir -p "$P_OUTPUT/$d" ||
+                cdepShowError 1 "Das Verzeichnis konnte nicht angelegt werden."
+    done
 
     # Leere Standard-Dateien erstellen
-    local out="${P_OUTPUT}/cdeploy.conf"
+    out="${P_OUTPUT}/cdeploy.conf"
     cat > "$out" <<EOF
 ## ================================================================================
 ## Config-Datei für das Installationsskript 'cdeploy'.
@@ -580,8 +594,12 @@ commandInstall() {
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
 
-    local scope_str;  [[ "$P_OPT_SCOPE" == "global" ]] \
-                        && scope_str="Globale" || scope_str="Lokale"
+    scope_str=""
+    if [ "$P_OPT_SCOPE" = "global" ]; then
+        scope_str="Globale"
+    else
+        scope_str="Lokale"
+    fi
     cdepShowMsg "${scope_str} Installation von Paket '$(cdepGetPackageInfo "")'" \
             "aus Quelle $(absPath "$P_PACKAGE_INPUT")" \
             "" \
@@ -601,7 +619,7 @@ commandInstall() {
     saveRemoveHooks "${P_PACKAGE}/cdeploy.conf"
 
     # Hook vor der Installation ausführen
-    if isOverridden hookPreInstall; then
+    if hookExists hookPreInstall; then
         cdepShowMsg "Pre-Install Hook ausführen"
         hookPreInstall
         cdepShowMsg ""
@@ -611,7 +629,7 @@ commandInstall() {
     # Wenn eine lokale Installation stattfindet, sicherstellen, dass
     # die lokalen Pfade ~/.local/bin in $PATH und ~/.local/share/man
     # in $MANPATH vorhanden sind
-    if [[ "$P_OPT_SCOPE" == "local" ]]; then
+    if [ "$P_OPT_SCOPE" = "local" ]; then
         ensureLocalPath PATH "$HOME/.local/bin"
         ensureLocalPath MANPATH "$HOME/.local/share/man"
     fi
@@ -663,7 +681,7 @@ commandInstall() {
     fi
 
     # Hook nach der Installation ausführen
-    if isOverridden hookPostInstall; then
+    if hookExists hookPostInstall; then
         cdepShowMsg "" "Post-Install Hook ausführen"
         hookPostInstall
     fi
@@ -682,7 +700,7 @@ commandInstall() {
 ## Alle installierten Pakete – getrennt nach lokal/global – auflisten
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 commandList() {
-    local list
+    list=""
 
     # Ausgabe für Anzeige mit Pager (less/more) im Terminalfenster
     if isFalse "$P_OPT_QUIET"; then
@@ -709,8 +727,8 @@ commandPack() {
     # Zusammenfassung der Aufgabe anzeigen
     showTitle
 
-    local project_info;  project_info="$(cdepGetPackageInfo)"
-    if [[ "$P_OPT_COMPRESSED" -eq 1 ]]; then
+    project_info="$(cdepGetPackageInfo)"
+    if [ "$P_OPT_COMPRESSED" -eq 1 ]; then
         cdepShowMsg "Erstelle komprimiertes Installationsarchiv für Paket ${project_info}." \
         "" \
         ""
@@ -721,7 +739,7 @@ commandPack() {
     fi
 
     # Archiv-Extension zum Pfad hinzufügen, wenn nötig;
-    local filename="${P_OUTPUT%"$_CDEP_PACK_EXT"}$_CDEP_PACK_EXT"
+    filename="${P_OUTPUT%"$_CDEP_PACK_EXT"}$_CDEP_PACK_EXT"
     filename="$(absPath "$filename")"
 
     # Pfade ausgeben
@@ -731,22 +749,21 @@ commandPack() {
             ""
 
     # Zielpfad prüfen
-    if [[ -z "$P_OUTPUT" ]]; then
+    if [ -z "$P_OUTPUT" ]; then
         cdepShowMsg "Es wurde kein Zielpfad angegeben."
-    elif [[ -e "$filename" ]]; then
-        if [[ -d "$filename" ]]; then
+    elif [ -e "$filename" ]; then
+        if [ -d "$filename" ]; then
             cdepShowError 1 "Es gibt bereits ein Verzeichnis mit diesem Namen." \
                         "Verzeichnisse können nicht überschrieben werden."
         fi
     fi
 
     # Variablen prüfen
-    for var in CDEP_PACKAGE_NAME P_OUTPUT; do
-        validateVar "$var"
-    done
+    validateVar "CDEP_PACKAGE_NAME" "$CDEP_PACKAGE_NAME"
+    validateVar "P_OUTPUT" "$P_OUTPUT"
 
     # Installationspaket verpacken
-    if [[ "$P_OPT_COMPRESSED" -eq 1 ]]; then
+    if [ "$P_OPT_COMPRESSED" -eq 1 ]; then
         # gzip-komprimiert
         tar -czf "$filename" -C "$P_PACKAGE" . || \
             cdepShowError 1 \
@@ -775,20 +792,22 @@ commandRemove() {
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
 
-    local scope_str;  [[ "$P_OPT_SCOPE" == "global" ]] \
-                        && scope_str="global" || scope_str="lokal"
-
+    if [ "$P_OPT_SCOPE" = "global" ]; then
+        scope_str="global"
+    else
+        scope_str="lokal"
+    fi
     cdepShowMsg "Entferne ${scope_str}e Installation von Paket '${P_PACKAGE}'." \
             "" \
             ""
 
 
     # Hook und Manifestdatei merken, müssen ganz zum Schluss entfernt werden.
-    local manifest_file; manifest_file="$(getCdeployDir "$P_OPT_SCOPE")/manifests/${P_PACKAGE}.manifest"
-    local hook_file;  hook_file="$(getCdeployDir "$P_OPT_SCOPE")/hooks/${P_PACKAGE}.hook"
+    manifest_file="$(getCdeployDir "$P_OPT_SCOPE")/manifests/${P_PACKAGE}.manifest"
+    hook_file="$(getCdeployDir "$P_OPT_SCOPE")/hooks/${P_PACKAGE}.hook"
 
     # Manifestdatei einlesen
-    local manifest
+    manifest=""
     if ! manifest="$(getManifestContent "$P_PACKAGE".manifest "$P_OPT_SCOPE")"; then
         cdepShowError 1 "Es wurde keine ${scope_str}e Installation von '${P_PACKAGE}' gefunden." \
                     "Verwenden Sie 'cdeploy list' um alle installierten Pakete anzuzeigen."
@@ -805,7 +824,7 @@ commandRemove() {
         printf  '   > '; IFS= read -r choice
         if [ "$(toLowercase "$choice")" != "ja" ]; then
             cdepShowMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
-            quit 2
+            exit 2
         fi
         cdepShowMsg ""\
                     ""
@@ -823,7 +842,9 @@ commandRemove() {
 
     # Gespeicherte Paketinformation inkl. Remove-Hooks auslesen; dazu brauchen wir den Hash
     # für die Hookdatei, der an 'loadRemoveHooks' übergeben wird.
-    local h_hsh h_category
+    h_hsh=""
+    h_category=""
+
     while IFS="$(printf '\t')" read -r _ h_hsh _ _ _ _ h_category _; do
         if [ "$h_category" != "hook" ]; then h_hsh=""; fi
         break  # Nur erste Zeile prüfen
@@ -844,16 +865,16 @@ EOF
 
 
     # Status-Variablen definieren
-    local file_count=0
-    local err_count=0
-    local err_hash=0
-    local err_inuse=0
-    local err_invalid=0
-    local err_notfound=0
-    local err_rm=0
+    file_count=0
+    err_count=0
+    err_hash=0
+    err_inuse=0
+    err_invalid=0
+    err_notfound=0
+    err_rm=0
 
     # Hook vor dem Entfernen ausführen
-    if isOverridden hookPreRemove; then
+    if hookExists hookPreRemove; then
         cdepShowMsg "Pre-Remove Hook ausführen"
         hookPreRemove
         cdepShowMsg ""
@@ -861,9 +882,9 @@ EOF
 
     # Alle Manifeste zum Paket auslesen. Diese Information wird benötigt um festzustellen,
     # ob eine Datei in mehreren installierte Versionen eines Pakets vorkommt.
-    local package_name="${P_PACKAGE%-[0-9]*}"
-    local all_manifests
+    package_name="${P_PACKAGE%-[0-9]*}"
     all_manifests="$(
+        trap - EXIT INT TERM HUP
         getManifestContent "${package_name}" "local" 2>/dev/null || true
         getManifestContent "${package_name}" "global" 2>/dev/null || true
         )"
@@ -873,9 +894,9 @@ EOF
     #                 der Manifeste bereits ignoriert!
     # Zur Erinnerung: "hash" kann nicht als Variablenname verwendet werden, weil es
     #                 u.U. mit einer Shell-Funktion gleichen Namens kollidiert! => $hsh
-    local current_hash=""
-    local occurences
-    local type=""
+    current_hash=""
+    occurences=""
+    type=""
 
     while IFS="$(printf '\t')" read -r m_filepath m_hsh m_pname m_pversion m_scope _ m_cat _; do
         # Sonderfall Hookdatei: überspringen
@@ -943,7 +964,8 @@ EOF
         # Datei entfernen
         if isTrue "$P_OPT_DRYRUN"; then
             cdepShowMsg "  X  ${type} $m_filepath"
-        elif cdepSafeRun rm -f "$m_filepath"; then
+        #elif rm -f "$m_filepath"; then
+        elif removeFile "$m_filepath"; then
             cdepShowMsg "  X  ${type} $m_filepath"
             removeDir "$(dirname "$m_filepath")" || true
         else
@@ -955,14 +977,14 @@ EOF
 
 
     # Hook nach dem Entfernen ausführen
-    if isOverridden hookPostRemove; then
+    if hookExists hookPostRemove; then
         cdepShowMsg "" "Post-Remove Hook ausführen"
         hookPostRemove
     fi
 
 
     # Gesamtzahl der Fehler errechnen
-    err_count=$((err_hash + err_invalid + err_rm ))
+    err_count=$((err_hash + err_invalid + err_rm))
 
 
     # Projektverzeichnis, Manifestdatei und Hookdatei entfernen, wenn möglich
@@ -976,17 +998,15 @@ EOF
         # Die Manifest- und Hookdatei nur löschen, wenn das komplette Paket entfernt wurde
         if [ "$err_count" -eq 0 ]; then
             [ ! -e "$hook_file" ] && hook_file="${hook_file}.gz"
-            cdepSafeRun rm -f "$hook_file" "MSG:  X  Hookdatei..........: $hook_file"
+            removeFile "$hook_file" "  X  Hookdatei..........: $hook_file"
             removeDir "$P_TARGET_HOOKS" || true
-            cdepSafeRun rm -f "$manifest_file" "MSG:  X  Manifestdatei......: $manifest_file"
+            removeFile "$manifest_file" "  X  Manifestdatei......: $manifest_file"
             removeDir "$P_TARGET_MANIFEST" || true
         else
-            cdepShowWarning "Manifest- und Hookdatei werden noch benötigt" \
-                            "(Paket nicht vollständig entfernt)"
-            err_inuse=$((err_inuse + 2))
+            cdepShowWarning "Manifest- und Hookdatei werden noch benötigt"
         fi
         # internes Verzeichnis (keine Warnmeldung wenn nicht leer!)
-        local dir;  dir="$(getCdeployDir "$P_OPT_SCOPE")"
+        dir="$(getCdeployDir "$P_OPT_SCOPE")"
         removeDir "$dir" "  X  cdeploy Verzeichnis: $dir" || true
         # Installationsverzeichnis
         if ! removeDir "$P_BASE_TARGET" "  X  Projektverzeichnis.: $P_BASE_TARGET"; then
@@ -1016,12 +1036,12 @@ EOF
     case "$err_inuse" in
         0) ;; # keine Ausgabe
         1) cdepShowMsg \
-            "- 1 Datei wird noch benötigt." ;;
+            "- 1 Datei wird noch von anderen Paketen benötigt." ;;
         *) cdepShowMsg \
-            "- $err_inuse Dateien werden noch benötigt." ;;
+            "- $err_inuse Dateien werden noch von anderen Paketen benötigt." ;;
     esac
 
-    local remaining;  remaining=$((err_invalid + err_notfound ))
+    remaining=$((err_invalid + err_notfound ))
     case "$remaining" in
         0) ;; # keine Ausgabe
         1) cdepShowMsg  "- 1 Datei wurde nicht gefunden." ;;
@@ -1034,7 +1054,7 @@ EOF
         *) cdepShowMsg  "- $err_rm Dateien konnten nicht gelöscht werden." ;;
     esac
 
-    quit 0
+    exit 0
 }
 
 
@@ -1047,12 +1067,12 @@ commandShowHelpAndExit() {
 .SH NAME
 .TP 10
 cdeploy –
-Ein leichtgewichtiges, Bash-kompatibles Installationssystem.
+Ein leichtgewichtiges, POSIX-kompatibles Installationssystem.
 .SH ÜBERSICHT
 .B cdeploy
 \fIBEFEHL\fR [\fIOPTIONEN\fR] [\fIARCHIV\fR] [\fIPAKET\fR]
 .SH BESCHREIBUNG
-\fBcdeploy\fR ist ein leichtgewichtiges, portables Installationssystem, das vollständig als Bash-kompatibles Shell-Skript umgesetzt ist. Als Installationspaket können herkömmliche Verzeichnisse oder cdeploy-Archive verwendet werden.
+\fBcdeploy\fR ist ein leichtgewichtiges, portables Installationssystem, das vollständig als POSIX-kompatibles Shell-Skript umgesetzt ist. Als Installationspaket können herkömmliche Verzeichnisse oder cdeploy-Archive verwendet werden.
 
 Es sind sowohl lokale als auch globale Installationen möglich. Die installierten Dateien werden über transparente Manifestdateien mit Hash-Prüfsummen verwaltet. Das Skript prüft, ob der Zugriff auf eines der Zielverzeichnisse Administratorrechte benötigt und verlangt ggf. ein Login. Eventuell bereits bestehende \fIsudo\fR-Sitzungen werden aus Sicherheitsgründen bei Aufruf des Skripts beendet.
 
@@ -1382,7 +1402,7 @@ EOF
 ## Paketinformation anzeigen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 commandShowPackageInfo() {
-    local info
+    info=""
 
     # Ausgabe für Anzeige mit Pager (less/more) im Terminalfenster
     if isFalse "$P_OPT_QUIET"; then
@@ -1422,19 +1442,23 @@ commandShowVersionAndExit() {
 
 ## Liefert das Basisverzeichnis für die Installation.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# shellcheck disable=SC2317
 cdepGetBaseTarget() {
-    echo "$P_BASE_TARGET"
-}
+        echo "$P_BASE_TARGET"
+    }
 
 
 ## Liefert den Wert eines Hook-Parameters, bzw. ein Default (2. Methoden-Parameter), wenn
 ## der Hook-Parameter nicht existiert
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# shellcheck disable=SC2317
 cdepGetHookParameter() {
-    local name="$1"
-    local default="${2:-}"
-    local parameters;  parameters="$(trim "$P_HOOK_PARAMETERS")"
-    local key val keyval
+    name="$1"
+    default="${2:-}"
+    parameters="$(trim "$P_HOOK_PARAMETERS")"
+    key=""
+    val=""
+    keyval=""
 
     # Schleife läuft, solange noch Parameter übrig sind
     while [ -n "$parameters" ]; do
@@ -1492,7 +1516,7 @@ cdepGetHookParameter() {
 ## Liefert die Projektinformation (Name + Version) als String
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdepGetPackageInfo() {
-    local divider="${1:- }"
+    divider="${1:- }"
 
     if isEmpty "$CDEP_PACKAGE_NAME"; then
         CDEP_PACKAGE_NAME="tools"
@@ -1515,52 +1539,67 @@ cdepGetPackageInfo() {
 ## folge 'MSG:' beginnen.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdepSafeRun() {
-    local args=("$@")
-    local msg=""
-    local output
-    local status=0
+    args="$(arrayCreateFromArgs "$@")"
+    msg=""
+    output=""
+    status=0
 
     # Optional: Den letzten Parameter als Meldung verwenden, wenn er mit 'MSG:' beginnt.
     #           Anschließend den letzten Parameter entfernen.
-    if [[ "${args[-1]}" == MSG:* ]]; then
-        msg="${args[-1]#MSG:}"   # entfernt das Präfix
-        unset 'args[-1]'         # entfernt letzten Parameter aus dem Befehl
-    fi
+    last_arg="$(arrayLastItem "$args")"
+    case "$last_arg" in
+        MSG:*)
+            msg="${last_arg#MSG:}"      # entfernt das Präfix
+            args="$(arrayPop "$args")"  # entfernt letzten Parameter aus dem Befehl
+    esac
 
     # Das letze Argument ist (jetzt) der Zielpfad. Falls er mit einer Tile beginnt, diese
     # durch den absoluten Pfad zum Benutzerverzeichnis ersetzen.
-    local target="${args[-1]}"
-    [[ "$target" == ~* ]] && target="${target/#\~/$HOME}"
+    target="$(arrayLastItem "$args")"
+    case "$target" in
+        ~) target="$HOME" ;;
+        ~/*) target="$HOME/${target#~/}" ;;
+    esac
 
     # Prüfen ob die sudo-Anmeldung noch gültig ist; ein erneutes Login aber nur durchführen,
     # wenn beim Start des Skriptes schon eine Anmeldung erfolgreich war
-    if [[ "$P_USE_SUDO" == "sudo" ]] && ! sudo -n true; then
+    if [ "$P_USE_SUDO" = "sudo" ] && ! sudo -n true; then
         cdepShowMsg "   Die Administratorrechte sind abgelaufen. Bitte melden Sie sich erneut an."
         sudoLogin
     fi
 
-    # Befehl ausführen; dazu das Abbruchkriterium -e (abbrechen, wenn Returncode ≠ 0)
-    # kurzzeitig außer Kraft setzen, damit bei einem Fehler die nachfolgenden Dateien
-    # noch verarbeitet werden; für nicht verarbeitete Dateien wird eine Fehlermeldung
-    # ausgegeben
+    # Befehl ausführen und Fehlercode/-nachricht merken
     if isFalse "$P_OPT_DRYRUN"; then
-        set +e
-        output=$($P_USE_SUDO "${args[@]}" 2>&1)
+        output=$(
+            IFS='
+'
+            # Lies $args zeilenweise und baue Argumente sicher auf
+            set --
+            while IFS= read -r arg; do
+                set -- "$@" "$arg"
+            done <<EOF
+$args
+EOF
+            if [ -n "$P_USE_SUDO" ]; then
+                sudo "$@" 2>&1
+            else
+                "$@" 2>&1
+            fi
+        )
         status=$?
-        set -e
     fi
 
     # Fehler ausgeben, falls der Befehl fehlgeschlagen ist, und den Returncode des Befehls
     # zurückgeben.
     if [ "$status" -ne 0 ]; then
-        local err_msg="${output##*:}"
+        err_msg="${output##*:}"
         cdepShowError 0 "${err_msg#"${err_msg%%[! ]*}"}: $target"
         return $status
     fi
 
     # Wenn als letzter Parameter eine Meldung übergeben wurde (s.o.), muss diese jetzt
     # ausgegeben werden
-    if [[ -n "$msg" ]]; then cdepShowMsg "$msg"; fi
+    if [ -n "$msg" ]; then cdepShowMsg "$msg"; fi
     return 0
 }
 
@@ -1568,7 +1607,7 @@ cdepSafeRun() {
 ## Fehlermeldung ausgeben; Skript beenden, wenn Fehlercode <> 0
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 cdepShowError() {
-    local err_code="$1"
+    err_code="$1"
     shift  # entferne den ersten Parameter (Fehlercode) aus "$@"
 
     # Fehlercounter anpassen; hat in Sub-Shells keine Auswirkung
@@ -1580,7 +1619,7 @@ cdepShowError() {
         showTitle
 
         # Ausgabe im Terminal
-        local line="$1"
+        line="$1"
         shift
 
         case "$line" in
@@ -1598,11 +1637,11 @@ cdepShowError() {
 
     # Skript beenden, wenn wir in der Haupt-Shell sind und der Fehlercode ≠ 0 ist;
     # in jedem anderen Fall einfach den Fehlercode zurückgeben
-    if [ "$err_code" -ne 0 ] && [ "${BASH_SUBSHELL:=0}" -eq 0 ]; then
-        quit "$err_code"
-    else
-        return "$err_code"
+    if [ "$err_code" -ne 0 ]; then
+        exit "$err_code"
     fi
+
+    return 0
 }
 
 
@@ -1625,7 +1664,7 @@ cdepShowWarning() {
         showTitle
 
         # Ausgabe im Terminal
-        local line="$1"
+        line="$1"
         shift
 
         printf "???? %s\n" "$line"
@@ -1643,17 +1682,66 @@ cdepShowWarning() {
 ## ========================================================================================
 
 
-## Relativen Pfad absolut ausgeben
+## Relativen Pfad absolut ausgeben. Das ist keine vollständige Normalisierung des Pfades!
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 absPath() {
-    local path="$1"
+    path="$1"
+
     # shellcheck disable=SC2088
-    case $path in
-        "~")  path="$HOME" ;;
-        "~/"*) path="${HOME}/${path#~/}" ;;
+    case "$path" in
+        "~") path="$HOME" ;;
+        "~/"*) path="$HOME/${path#~/}" ;;
+        ".") path="$(pwd)/${path#.}" ;;
+        "./"*) path="$(pwd)/${path#./}" ;;
+        "..") path="$(dirname "$(pwd)")/${path#..}" ;;
+        "../"*) path="$(dirname "$(pwd)")/${path#../}" ;;
     esac
 
-    echo "$(cd "$(dirname -- "$path")" && pwd)/$(basename -- "$path")"
+    echo "$path"
+}
+
+
+## Fügt ein Element an ein Array an
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+arrayAppend() {
+    array="$1"
+    item="$2"
+
+    if [ -n "$array" ]; then
+        printf '%s\n%s\n' "$array" "$item"
+    else
+        printf '%s\n' "$item"
+    fi
+}
+
+
+# Erstellt ein Array aus einer Parameterliste
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+arrayCreateFromArgs() {
+    printf '%s\n' "$@"
+}
+
+
+## Liefert das letzte Element, ohne das Array zu verändern
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+arrayLastItem() {
+    array="$1"
+    printf '%s\n' "$array" | awk 'NF { last = $0 } END { print last }'
+}
+
+
+# Entfernt das letzte Element
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+arrayPop() {
+    array="$1"
+    count=$(printf '%s\n' "$array" | awk 'NF { n++ } END { print n }')
+    if [ -z "$count" ] || [ "$count" -eq 0 ]; then
+        printf ''
+    elif [ "$count" -eq 1 ]; then
+        printf ''
+    else
+        printf '%s\n' "$array" | awk 'NR < '"$count"''
+    fi
 }
 
 
@@ -1662,16 +1750,17 @@ absPath() {
 ## erlaubte(n) Aktion(en) folgen danach.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 assertAction() {
-    local option="$1"
+    option="$1"
     shift
-    local allowed=("$@")
-    for a in "${allowed[@]}"; do
-        [[ "$P_ACTION" == "$a" ]] && return 0
-    done
 
-    cdepShowError 0 "Die Option '${option}' ist nur in Zusammenhang mit der/den Aktion(en) erlaubt:" \
-                "    ${allowed[*]}" \
-                "Die gewählte Aktion ist aber '$P_ACTION'."
+    allowed="$(arrayCreateFromArgs "$@")"
+    while IFS= read -r a; do
+        [ "$P_ACTION" = "$a" ] && return 0
+    done <<EOF
+$allowed
+EOF
+
+    cdepShowError 0 "Die Option '${option}' ist in Zusammenhang mit der Aktion '$P_ACTION' nicht erlaubt!"
     echo
     showSyntaxAndExit
 }
@@ -1680,10 +1769,10 @@ assertAction() {
 ## Prüfen ob eine Variable bereits einen Wert enthält
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 assertIsEmpty() {
-    local parname="$1"
-    local value="$2"
+    parname="$1"
+    value="$2"
 
-    if [[ -n "$value" ]]; then
+    if [ -n "$value" ]; then
         cdepShowError 0 "Der Parameter '$parname' wurde bereits übergeben." ""
         showSyntaxAndExit
     fi
@@ -1693,10 +1782,10 @@ assertIsEmpty() {
 ## Prüfen ob die übergebene Variable einen Wert ungleich 1 hat (false)
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 assertIsFalse() {
-    local parname="$1"
-    local value="$2"
+    parname="$1"
+    value="$2"
 
-    if [[ "$value" -eq 1 ]]; then
+    if [ "$value" -eq 1 ]; then
         cdepShowError 0 "Der Parameter ''$parname' wurde bereits übergeben." ""
         showSyntaxAndExit
     fi
@@ -1707,45 +1796,45 @@ assertIsFalse() {
 ## Installationspaket erfüllt
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 checkPackage() {
-    local package="$P_PACKAGE"
-    local package_input="$P_PACKAGE_INPUT"
+    package="$P_PACKAGE"
+    package_input="$P_PACKAGE_INPUT"
 
 
-    if [[ ! -e "$package" ]]; then
+    if [ ! -e "$package" ]; then
         cdepShowError 1 "Das Paket wurde nicht gefunden:" \
                     "$(absPath "$package_input")"
-    elif [[ ! -d "$package" ]]; then
+    elif [ ! -d "$package" ]; then
         cdepShowError 1 "Das ist kein Verzeichnis:" \
                     "$(absPath "$package_input")"
     fi
 
-    local src=""
+    src=""
 
     # a) cdeploy.conf vorhanden?
     src="$package/cdeploy.conf"
-    [[ -f "$src" ]] && return 0
+    [ -f "$src" ] && return 0
 
     # b) nicht leeres ./bin?
     src="$package/bin"
-    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return 0
+    [ -d "$src" ] && [ "$(find "$src" -maxdepth 1 -type f | wc -l)" -gt 0 ] && return 0
 
     # c) nicht leeres ./lib?
     src="$package/lib"
-    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return 0
+    [ -d "$src" ] && [ "$(find "$src" -maxdepth 1 -type f | wc -l)" -gt 0 ] && return 0
 
     # d) nicht leeres ./etc?
     src="$package/etc"
-    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return 0
+    [ -d "$src" ] && [ "$(find "$src" -maxdepth 1 -type f | wc -l)" -gt 0 ] && return 0
 
     # e) nicht leeres ./man?
     src="$package/man"
-    [[ -d "$src" && $(find "$src" -maxdepth 1 -type f | wc -l) -gt 0 ]] && return 0
+    [ -d "$src" ] && [ "$(find "$src" -maxdepth 1 -type f | wc -l)" -gt 0 ] && return 0
 
     # f) ./files mit files.conf und mindestens einer weiteren Datei?
     src="$package/files"
-    if [[ -d "$src" && -f "$src/files.conf" ]]; then
-        local num_files;  num_files=$(find "$src" -maxdepth 1 -type f | wc -l)
-        (( num_files > 1 )) && return 0
+    if [ -d "$src" ] && [ -f "$src/files.conf" ]; then
+        num_files=$(find "$src" -maxdepth 1 -type f | wc -l)
+        [ "$num_files" -gt 1 ] && return 0
     fi
 
     # An dieser Stelle haben wir sichergestellt, dass das Verzeichnis nicht den
@@ -1763,7 +1852,7 @@ checkPermissions() {
     # Wenn die Installation global erfolgt, prüfen wir zuerst die Verzeichnisse ./bin,
     # ./etc, ./lib und ./man. Wenn in einem dieser Verzeichnisse Dateien sind, Kennwort
     # abfragen und Prüfung beenden.
-    if [[ $P_OPT_SCOPE == "global" ]]; then
+    if [ $P_OPT_SCOPE = "global" ]; then
         for d in "$P_TARGET_BIN" "$P_TARGET_LIB" "$P_TARGET_ETC" "$P_TARGET_MAN" \
                     "$P_TARGET_MANIFEST"; do
             if ! dirIsEmpty "$d"; then
@@ -1776,29 +1865,33 @@ checkPermissions() {
     # Wenn in der ersten Prüfung kein sudo-Kennwort notwendig war, müssen jetzt die
     # Einträge in der Datei 'files.conf' geprüft werden. Sobald eines der Verzeichnisse
     # sudo benötigt, Kennwort abfragen und Prüfung beenden.
-    if [[ $P_USE_SUDO == "" ]]; then
-        local files_conf="${P_PACKAGE}/files.conf"
+    if [ "$P_USE_SUDO" = "" ]; then
+        files_conf="${P_PACKAGE}/files.conf"
 
         # Wenn files.conf nicht existiert -> kein sudo nötig
-        [[ -f "$files_conf" ]] || return 0
+        [ -f "$files_conf" ] || return 0
 
         # 2.2 Alle Zielpfade auslesen
         while IFS= read -r line; do
-            # Leerzeilen und Kommentare überspringen
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            # Leerzeilen und Kommentare überspringen (hier kein | möglich!)
+            case "$line" in
+                '') continue ;;
+                #*) continue ;;
+            esac
 
-            # Quelle und Ziel trennen (z. B. "foo.txt   /usr/bin")
-            local src dest
-            read -r src dest <<<"$line"
-
-            # Wenn kein Ziel angegeben -> überspringen
-            [[ -z "$dest" ]] && continue
+            # Quelle und Ziel trennen; wenn kein Ziel angegeben, überspringen
+            # Ziel: alles rechts von -->
+            dest="${line#*-->}"
+            dest="$(trim "$dest")"
+            [ -z "$dest" ] && continue
+            # Quelle: alles links von -->
+            src="${line%%-->*}"
+            src="$(trim "$src")"
 
             # Prüfen, ob Zielverzeichnis Schreibrechte erfordert
-            local target_dir
             target_dir=$(dirname "$dest")
 
-            if [[ ! -w "$target_dir" ]]; then
+            if [ ! -w "$target_dir" ]; then
                 sudoLogin
                 return 0
             fi
@@ -1810,16 +1903,15 @@ checkPermissions() {
 ## Datei(en) in Verzeichnis $2 nach $3 kopieren
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 copyFiles() {
-    local category="$1"
-    local src_dir="$2"
-    local dest_dir="$3"
+    category="$1"
+    src_dir="$2"
+    dest_dir="$3"
 
     if [ -d "$src_dir" ]; then
-        shopt -s nullglob
         cdepSafeRun mkdir -p "$dest_dir"
 
         for f in "$src_dir"/*; do
-            [ -f "$f" ] || continue
+            [ -e "$f" ] || continue   # überspringt "nicht vorhandene" Globs
             if cdepSafeRun cp -u "$f" "$dest_dir/"; then
                 cdepSafeRun chmod 755 "$dest_dir/$(basename "$f")" \
                     "MSG:  -> $dest_dir/$(basename "$f")"
@@ -1827,7 +1919,6 @@ copyFiles() {
                 P_COUNT_CPY=$((P_COUNT_CPY + 1))
             fi
         done
-        shopt -u nullglob
     fi
 }
 
@@ -1835,20 +1926,20 @@ copyFiles() {
 ## Prüfen ob ein Verzeichnis leer ist
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 dirIsEmpty() {
-    local path="$1"
+    path="$1"
 
     # Wenn Pfad nicht existiert -> prüfe Elternverzeichnis
-    if [[ ! -e "$path" ]]; then
+    if [ ! -e "$path" ]; then
         path=$(dirname "$path")
     fi
 
     # Wenn keine Directory -> false
-    if [[ ! -d "$path" ]]; then
+    if [ ! -d "$path" ]; then
         return 1
     fi
 
     # Wenn Verzeichnis nicht leer -> false
-    if [[ $(find "$path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) -gt 0 ]]; then
+    if [ "$(find "$path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" -gt 0 ]; then
         return 1
     fi
 
@@ -1862,30 +1953,40 @@ dirIsEmpty() {
 ## wenn dieser keine URL darstellt.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 downloadIfURL() {
-    local pack_url="$1"
+    pack_url="$1"
 
-    if [[ "$pack_url" =~ ^(https?|ftp|file):// ]]; then
-        showTitle
+    case "$pack_url" in
+        http://*|https://*|ftp://*|file://*)
+            showTitle
 
-        # Wir erwarten immer ein cdeploy-Archiv
-        if [[ ! "$pack_url" =~ ${_CDEP_PACK_EXT_RE}$ ]]; then
-           cdepShowError 1 "Die angegebene Quelle ist kein ${_CDEP_PACK_EXT}-Archiv."
-           return $?
-        fi
-        cdepShowMsg "Lade Installationspaket von URL" \
-                "${pack_url}..." \
-                ""
+            # Wir erwarten immer ein cdeploy-Archiv
+            case "$pack_url" in
+                *"$_CDEP_PACK_EXT")
+                    : ;;
+                *)
+                    cdepShowError 1 "Die angegebene Quelle ist kein ${_CDEP_PACK_EXT}-Archiv."
+                    return $? ;;
+            esac
+            cdepShowMsg "Lade Installationspaket von URL" \
+                    "${pack_url}..." \
+                    ""
 
-        # temporäre Datei oder Verzeichnis
-        local tmpfile;  tmpfile=$(mktemp "/tmp/cdeploy_pkg.XXXXXX${_CDEP_PACK_EXT}") || \
-                cdepShowError 1 "Temporäre Datei konnte nicht angelegt werden."; return $?
-        cdepSafeRun curl -fsSL "$pack_url" -o "$tmpfile" || \
-                cdepShowError 1 "Download fehlgeschlagen."; return $?
-        P_TMP_OBJECTS+=("$tmpfile")
+            # temporäre Datei oder Verzeichnis
+#            tmpfile=$(mktemp "/tmp/cdeploy_pkg.XXXXXX${_CDEP_PACK_EXT}") || \
+#                    cdepShowError 1 "Temporäre Datei konnte nicht angelegt werden."; return $?
+            if [ ! "$(mktemp "/tmp/cdeploy_pkg.XXXXXX${_CDEP_PACK_EXT}")" ]; then
+                cdepShowError 1 "Temporäre Datei konnte nicht angelegt werden."
+                return $?
+            fi
+            if ! cdepSafeRun curl -fsSL "$pack_url" -o "$tmpfile"; then
+                cdepShowError 1 "Download fehlgeschlagen."
+                return $?
+            fi
+            P_TMP_OBJECTS="$(arrayAppend "$P_TMP_OBJECTS" "$tmpfile")"
 
-        # Pfad zur temporären Datei zurückgeben
-        pack_url="$tmpfile"
-    fi
+            # Pfad zur temporären Datei zurückgeben
+            pack_url="$tmpfile"
+    esac
 
     # Pfad prüfen und zurückgeben
     printf '%s' "$pack_url"
@@ -1909,26 +2010,30 @@ downloadIfURL() {
 ## von (den meisten) Shells ausgewertet wird.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 ensureLocalPath() {
-    local varname="$1"
-    local target="$2"
-    local profile="$HOME/.profile"
+    varname="$1"
+    target="$2"
+    profile="$HOME/.profile"
 
     # Doppelpunkte sind in PATH-ähnlichen Variablen verboten. Wenn das Ziel Doppelpunkte
     # enthält, wird das Skript mit einer Fehlermdelung abgebrochen.
     # Wenn der Pfad ok ist, wird er angelegt, falls er noch nicht existiert.
-    [[ "$target" == *:* ]] && cdepShowError 1 "Pfade mit Doppelpunkt (':') werden nicht unterstützt."
+    case "$target" in
+        *:*)
+            cdepShowError 1 "Pfade mit Doppelpunkt (':') werden nicht unterstützt." ;;
+    esac
     [ -d "$target" ] || cdepSafeRun mkdir -p "$target"
 
     # Aktuellen Wert der Umgebungsvariablen ermitteln, falls vorhanden
-    local current_value=""
-    if [[ -n ${!varname-} ]]; then
-        current_value="${!varname}"
-    fi
+    current_value=""
+    case "$varname" in
+        PATH)       current_value="$PATH" ;;
+        MANPATH)    current_value="$MANPATH" ;;
+    esac
 
     # Falls MANPATH leer ist, den System-Standard verwenden. Dadurch kann MANPATH niemals
     # leer sein. Das ist wichtig, weil 'man' keinen Fallback besitzt, und bei leerem
     # MANPATH somit überhaupt keine Man-Pages mehr gefunden würden.
-    if [[ "$varname" == "MANPATH" && -z "$current_value" ]]; then
+    if [ "$varname" = "MANPATH" ] && [ -z "$current_value" ]; then
         current_value=$(man --path 2>/dev/null)
     fi
 
@@ -1939,7 +2044,7 @@ ensureLocalPath() {
     esac
 
     # Neue Pfadeinstellung in der aktiven Shell aktivieren
-    [[ -n "$current_value" ]] && current_value="$current_value:$target" || current_value="$target"
+    [ -n "$current_value" ] && current_value="$current_value:$target" || current_value="$target"
     eval "export $varname=\"\$$current_value:$target\""
 
     # Den erweiterten Pfad in ~/.profile eintragen, wenn er dort noch nicht vorhanden ist.
@@ -1965,7 +2070,7 @@ ensureLocalPath() {
             MANPATH)
 # Zur Erinnerung: muss linksbündig stehen, weil Here-Doc
 cat <<EOF >> ~/.profile
-if [[ -z "\$MANPATH" ]]; then
+if [ -z "\$MANPATH" ]; then
     MANPATH="\$(man --path 2>/dev/null || echo \"$P_TARGET_MAN\")"
 fi
 export MANPATH="\$MANPATH:$P_TARGET_MAN"
@@ -1976,7 +2081,8 @@ EOF
 
         # Rückmeldung an den Benutzer
         case $- in
-            *i*)  . "$profile" && cdepShowMsg "  -> \$$varname wurde aktualisiert." ;;
+            *i*)  # shellcheck disable=SC1090
+                  . "$profile" && cdepShowMsg "  -> \$$varname wurde aktualisiert." ;;
             *)    cdepShowMsg "  -> \$$varname wurde angepasst. Bitte das Terminal neu starten." "" ;;
         esac
     fi
@@ -1986,18 +2092,21 @@ EOF
 ## Installationspaket für (De-)Installation in ein temporäres Verzeichnis entpacken
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 extractPackage() {
-    local archive="$1"
-    if [[ "$archive" == "" || "$archive" != *"$_CDEP_PACK_EXT" ]]; then
-        printf '%s' "$archive"
-        return 0
-    fi
+    archive="$1"
+    case "$archive" in
+        *"$_CDEP_PACK_EXT")
+            : ;;
+        *)
+            printf '%s' "$archive"
+            return 0 ;;
+    esac
 
-    local tmpdir;  tmpdir=$(mktemp -d) || {
+    tmpdir=$(mktemp -d) || {
         cdepShowError 1 "Temporäres Verzeichnis konnte nicht angelegt werden."; return $?
     }
 
     # temporäres Objekt für das spätere Aufräumen merken
-    P_TMP_OBJECTS+=("$tmpdir")
+    P_TMP_OBJECTS="$(arrayAppend "$P_TMP_OBJECTS" "$tmpdir")"
 
     tar -xf "$archive" -C "$tmpdir" || {
         cdepShowError 1 "Archiv konnte nicht extrahiert werden."; return $?
@@ -2013,13 +2122,11 @@ extractPackage() {
 ## angewandt.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 fileAppend() {
-    local datei="$1"
+    datei="$1"
     shift || return 1
 
-    local status=0
+    status=0
 
-    # +e erlaubt Fehlerhandling ohne Skriptabbruch
-    set +e
     # Alle Zeilen gesammelt anhängen; anstatt 'printf "%b"' werden die Tabs gezielt per
     # 'sed' expandiert. Das minimiert die Gefahr durch eingeschleuste Escape-Sequenzen,
     # die von 'printf "%b"' interpretiert würden.
@@ -2029,37 +2136,12 @@ fileAppend() {
                 $P_USE_SUDO tee -a "$datei" >/dev/null
     done
     status=$?
-    set -e
 
-    if (( status != 0 )); then
+    if [ "$status" -ne 0 ]; then
         cdepShowError 1 "Manifest kann nicht geschrieben werden: $datei"
     fi
 
     return $status
-}
-
-
-## Aufräumen beim Beenden oder Abbrechen des Skriptes
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-finalCleanup() {
-    # Zuerst alle Traps entfernen, um Rekursionen zu vermeiden
-    trap - EXIT INT TERM HUP
-
-    # Offenen Eintrag in ~/.profile abschließen
-    if isFalse "$P_OPT_DRYRUN" && isTrue "$P_ENV_PATH_SET"; then
-        echo "# <<< cdeploy initialize <<<" >> "$HOME/.profile"
-    fi
-
-    # Temporäre Dateien/Verzeichnisse entfernen
-    for p in "${P_TMP_OBJECTS[@]}"; do
-        [[ -e $p ]] && cdepSafeRun rm -rf -- "$p"
-    done
-
-    # Verwendung von sudo deaktivieren
-    if [ "$P_USE_SUDO" != "" ]; then
-        P_USE_SUDO=""
-        sudo -k
-    fi
 }
 
 
@@ -2072,19 +2154,24 @@ finalCleanup() {
 ##     summary ~/Dokumente/digest.txt
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 freeCopy() {
-    local def_file="$1"  # Konfigurationsdatei für das Kopieren
-    local src_base="$2"  # Quellverzeichnis im Paket
-    local output status
-    local src dest
-    local src_path dest_path
+    def_file="$1"  # Konfigurationsdatei für das Kopieren
+    src_base="$2"  # Quellverzeichnis im Paket
+    output=""
+    status=0
+    src=""
+    dest=""
+    src_path=""
+    dest_path=""
 
     [ -f "$def_file" ] || \
         { cdepShowWarning "Keine Konfigurationsdatei für das Kopieren gefunden."; return; }
 
-    set +e
     while IFS= read -r src || [ -n "$src" ]; do
         # Kommentare und leere Zeilen überspringen
-        [[ -z "$src" || "$src" =~ ^# ]] && continue
+        case "$src" in
+            '') continue ;;
+            #*) continue ;;
+        esac
 
         # Quell- und Zielpfad einstellen; ausgelesene Daten vorher trimmen
         dest="${src#*-->}"
@@ -2107,17 +2194,20 @@ freeCopy() {
 
         # Zielverzeichnis erstellen; wenn eine Tile am Anfang des Zielpfades steht,
         # ersetze sie durch den absoluten Pfad zum Benutzerverzeichnis
-        [[ "$dest_path" == ~* ]] && dest_path="${dest_path/#\~/$HOME}"
+        case "$dest_path" in
+            ~) dest_path="$HOME" ;;
+            ~/*) dest_path="$HOME/${dest_path#~/}" ;;
+        esac
         if [ ! -e "$dest_path" ]; then
-            if [[ "$dest_path" == */ ]]; then
-                cdepSafeRun mkdir -p "$dest_path"
-            else
-                cdepSafeRun mkdir -p "$(dirname "$dest_path")"
-            fi
+            case "$dest_path" in
+                */) cdepSafeRun mkdir -p "$dest_path" ;;
+                *)  cdepSafeRun mkdir -p "$(dirname "$dest_path")" ;;
+            esac
         fi
 
         # Datei aus dem Paket in das Ziel kopieren
-        if [ -d "$dest_path" ] || [[ "$dest_path" == */ ]]; then
+        last_char=${dest_path%"${dest_path%?}"}  # Extrahiere letztes Zeichen
+        if [ -d "$dest_path" ] || [ "$last_char" = "/" ]; then
             if [ "${dest_path%/}" != "$dest_path" ]; then
                 dest_path="${dest_path%/}/$(basename -- "$src_path")"
             fi
@@ -2136,14 +2226,13 @@ freeCopy() {
             fi
         fi
     done < "$def_file"
-    set -e
 }
 
 
 ## Liefere den sha256 Hash für eine Datei/ein Verzeichnis
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 getFileHash() {
-    local filepath="$1"
+    filepath="$1"
 
     # Datei/Verzeichnis nicht gefunden oder nicht übergeben
     #if [ ! -f "$filepath" ]; then
@@ -2204,10 +2293,14 @@ getInstallerTargets() {
     P_TARGET_MANIFEST="$(getCdeployDir $P_OPT_SCOPE)/manifests"
     P_TARGET_HOOKS="$(getCdeployDir $P_OPT_SCOPE)/hooks"
 
-    for var in CDEP_PACKAGE_NAME P_BASE_TARGET P_TARGET_BIN P_TARGET_ETC P_TARGET_LIB P_TARGET_MAN \
-                P_TARGET_MANIFEST P_TARGET_SYM; do
-        validateVar "$var"
-    done
+    validateVar "CDEP_PACKAGE_NAME" "$CDEP_PACKAGE_NAME"
+    validateVar "P_BASE_TARGET" "$P_BASE_TARGET"
+    validateVar "P_TARGET_BIN" "$P_TARGET_BIN"
+    validateVar "P_TARGET_ETC" "$P_TARGET_ETC"
+    validateVar "P_TARGET_LIB" "$P_TARGET_LIB"
+    validateVar "P_TARGET_MAN" "$P_TARGET_MAN"
+    validateVar "P_TARGET_MANIFEST" "$P_TARGET_MANIFEST"
+    validateVar "P_TARGET_SYM" "$P_TARGET_SYM"
 }
 
 
@@ -2229,12 +2322,14 @@ getManifestContent() {
     # Parameter:
     #   $1 = Paketbasisname (z. B. "mypkg" oder "mypkg-*")
     #   $2 = Scope ("local" oder "global")
-    local manifest_name="$1"
-    local scope="$2"
-    local manifest_path file files_found=0
+    manifest_name="$1"
+    scope="$2"
+    manifest_path=""
+    file=""
+    files_found=0
 
     # Scope-Text für Fehlermeldungen
-    local scope_str
+    scope_str=""
     case "$scope" in
         global) scope_str="global" ;;
         local)  scope_str="lokal" ;;
@@ -2250,7 +2345,7 @@ getManifestContent() {
     }
 
     # Übergebene Datei(en) einlesen
-    local file
+    file=""
 
     if [ "${manifest_name##*.}" = "manifest" ]; then
         # Exakte Datei auslesen
@@ -2271,21 +2366,10 @@ getManifestContent() {
     # Wenn keine Datei gefunden wurde -> Fehler
     if [ "$files_found" -eq 0 ]; then
         cdepShowError 1 "Es wurde keine ${scope_str}e Installation von '$manifest_name' gefunden."
-        return $?
+        #return $?
     fi
 
     return 0
-}
-
-
-## Liefert einen String zur Anzeige des Zielbereichs (Scope)
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-getScopeStr() {
-    if [[ "$P_OPT_SCOPE" == "global" ]]; then
-        echo "global"
-    else
-        echo "lokal"
-    fi
 }
 
 
@@ -2293,31 +2377,60 @@ getScopeStr() {
 ## werden kann, wird -1 zurückgegeben.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 getTerminalWidth() {
-    width=-1  # Standardwert
+    width=-1
 
-    # Versuch 1: stty size
+    # 1️⃣ Versuch: stty size (breit unterstützte Methode)
     if command -v stty >/dev/null 2>&1; then
-        set -- "$(stty size 2>/dev/null)"
+        # stty size liefert zwei Zahlen: ROWS COLUMNS
+        # shellcheck disable=SC2046
+        set -- $(stty size 2>/dev/null)
         if [ $# -eq 2 ]; then
             width=$2
         fi
     fi
 
-    # Versuch 2: COLUMNS-Variable
-    if [ "$width" -eq -1 ] && [ -n "$COLUMNS" ]; then
+    # 2️⃣ Versuch: tput cols (falls terminfo vorhanden ist)
+    if [ "$width" -eq -1 ] && command -v tput >/dev/null 2>&1; then
+        width=$(tput cols 2>/dev/null || echo -1)
+    fi
+
+    # 3️⃣ Versuch: Umgebungsvariable (nicht POSIX, aber oft vorhanden)
+    if [ "$width" -eq -1 ] && [ -n "${COLUMNS-}" ]; then
         width=$COLUMNS
+    fi
+
+    # 4️⃣ Fallback: Standardbreite
+    if [ "$width" -eq -1 ]; then
+        width=80
     fi
 
     echo "$width"
 }
 
 
+## Prüfen ob ein Hook definiert wurde
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+hookExists() {
+    name=$1
+
+    # command -v liefert Pfad für Executables oder Funktionstyp - in POSIX kann man prüfen,
+    # ob der Typ 'function' ist
+    output=$(command -v "$name" 2>/dev/null) || return 1
+
+    # POSIX-konforme Prüfung: Rückgabe von 'type' muss "shell function" enthalten
+    case "$(type "$name" 2>/dev/null)" in
+        *"shell function"*) return 0 ;; # Funktion existiert
+        *) return 1 ;;                  # kein Funktionsname
+    esac
+}
+
+
 ## Installieren der Man-Pages aus dem Installationspaket
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 installManpages() {
-    local src_dir="$1"
-    local dest_dir="$P_TARGET_MAN"
-    local target_dir
+    src_dir="$1"
+    dest_dir="$P_TARGET_MAN"
+    target_dir=""
 
     if [ -d "$src_dir" ]; then
         # Kopiere die Dateien aus dem Paket an den Zielort; passe die Zugriffsrechte
@@ -2359,7 +2472,7 @@ installManpages() {
 ## Prüfen ob eine Variable leer ist
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 isEmpty() {
-    if [ -z "$1" ] || [ "$1" == "" ]; then
+    if [ -z "$1" ]; then
         return 0
     fi
     return 1
@@ -2374,25 +2487,6 @@ isFalse() {
         ""|0) return 0 ;;
         *)    return 1 ;;
     esac
-}
-
-
-## Prüfen ob ein Hook überschrieben wurde (also tatsächlich Code enthält)
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-isOverridden() {
-    local name="$1"
-    local def
-
-    # declare -f liefert die komplette Funktionsdefinition (oder nichts)
-    if ! def=$(declare -f "$name" 2>/dev/null); then
-        return 1  # Funktion existiert nicht -> nicht überschrieben
-    fi
-    # Wenn der Marker in der Definition vorkommt -> Default noch aktiv
-    if printf '%s\n' "$def" | grep -q '__DEFAULT_HOOK__'; then
-        return 1   # nicht überschrieben
-    else
-        return 0   # überschrieben
-    fi
 }
 
 
@@ -2421,8 +2515,8 @@ left() {
 ## Konfigurationsdatei einbinden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 loadConfigFile() {
-    local config_file="$1"
-    if [[ -f "$config_file" ]]; then
+    config_file="$1"
+    if [ -f "$config_file" ]; then
         if ! "$_CDEP_SHELL_BIN" -n "$config_file" 2>/dev/null; then
             cdepShowError 1 "Die Konfigurationsdatei hat ein ungültiges Format." "$config_file"
         fi
@@ -2436,11 +2530,11 @@ loadConfigFile() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 loadRemoveHooks() {
     # Abbrechen, wenn die Datei nicht existiert
-    local hook_path;  hook_path="$(getCdeployDir "$P_OPT_SCOPE")/hooks/${P_PACKAGE}.hook"
+    hook_path="$(getCdeployDir "$P_OPT_SCOPE")/hooks/${P_PACKAGE}.hook"
     [ ! -f "$hook_path" ] && hook_path="${hook_path}.gz"
     if [ ! -f "$hook_path" ]; then return 0; fi
 
-    local hsh;  hsh="$(getFileHash "$hook_path")"
+    hsh="$(getFileHash "$hook_path")"
     if [ "$hsh" != "$1" ]; then
         cdepShowError 1 "Die gespeicherten Paketinformationen wurden anscheinend manipuliert" \
                     "und können deshalb nicht verwendet werden!"
@@ -2450,9 +2544,9 @@ loadRemoveHooks() {
     # als auch ungepackt als .hook
     case "$hook_path" in
         *.gz)
-            local tmpfile;  tmpfile="$(mktemp "/tmp/${P_PACKAGE}.XXXXXX")" || \
-                                cdepShowError 1 "Konnte temporäre Datei für Hook nicht erstellen."
-            P_TMP_OBJECTS+=("$tmpfile")
+            tmpfile="$(mktemp "/tmp/${P_PACKAGE}.XXXXXX")" || \
+                    cdepShowError 1 "Konnte temporäre Datei für Hook nicht erstellen."
+            P_TMP_OBJECTS="$(arrayAppend "$P_TMP_OBJECTS" "$tmpfile")"
             if ($P_USE_SUDO gunzip -c "$hook_path" > "$tmpfile"); then
                 loadConfigFile "$tmpfile"
             else
@@ -2471,9 +2565,9 @@ loadRemoveHooks() {
 ## angelegt, ansonsten als aktive Zeile.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makeConfigLine() {
-    local varname="$1"
-    local value="$2"
-    if [[ -n "$value" ]]; then
+    varname="$1"
+    value="$2"
+    if [ -n "$value" ]; then
         echo "${varname}=\"${value}\""
     else
         echo "#${varname}=\"\""
@@ -2484,10 +2578,8 @@ makeConfigLine() {
 ## Erstellt die Paketinformationen zur Anzeige im Terminal und/oder Ausgabe in Datei
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makePackageInfo() {
-    local output
-
     output="$(
-        local _lw=80;  readonly _lw
+        _lw=80;  readonly _lw
 
         # Titel und Beschreibung der Aktion ausgeben
         showTitle
@@ -2498,7 +2590,7 @@ makePackageInfo() {
                 ""
 
         # Prüfen ob das Paket existiert
-        if [[ ! -e "$P_PACKAGE" ]]; then
+        if [ ! -e "$P_PACKAGE" ]; then
             cdepShowError 1 "Das angegebene Paket wurde nicht gefunden."
             return 0
         fi
@@ -2518,9 +2610,9 @@ makePackageInfo() {
                 ""
         fi
 
-        # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten Bash
+        # Zur Erinnerung: Der Variablenname 'hash' kollidiert hier mit dem eingebauten
         #                 Befehl gleichen Namens! Daher 'hsh' verwenden.
-        local hsh;  hsh="$(getFileHash "$P_PACKAGE_SOURCE")"
+        hsh="$(getFileHash "$P_PACKAGE_SOURCE")"
         case $? in
             1) hsh="${hsh} (Paket nicht gefunden)" ;;
             2) hsh="${hsh} (kein SHA-Tool gefunden)" ;;
@@ -2550,7 +2642,7 @@ makePackageInfo() {
 
 
         # Erweiterte Ausgabe inkl. aller Dateien
-        local total=0
+        total=0
 
         cdepShowMsg "" \
             "" \
@@ -2559,56 +2651,59 @@ makePackageInfo() {
 
         # ./bin, ./lib, ./etc, ./man
         for dir in bin lib etc man; do
-            if [[ -d "${P_PACKAGE}/$dir" ]]; then
+            if [ -d "${P_PACKAGE}/$dir" ]; then
                 cdepShowMsg "./$dir"
-                while IFS= read -r f; do
+                for f in "${P_PACKAGE}/$dir"/*; do
+                    [ -e "$f" ] || continue  # entspricht nullglob
                     cdepShowMsg "    $f"
                     total=$((total + 1))
-                done < <(ls -1 "${P_PACKAGE}/$dir")
+                done
                 cdepShowMsg ""
             fi
         done
 
         # --- files ---
-        local files_dir="${P_PACKAGE}/files"
-        local files_conf="$files_dir/files.conf"
+        files_dir="${P_PACKAGE}/files"
+        files_conf="$files_dir/files.conf"
 
-        if [[ -d "$files_dir" && -f "$files_conf" ]]; then
+        if [ -d "$files_dir" ] && [ -f "$files_conf" ]; then
             cdepShowMsg "files/  (gruppiert nach Ziel)"
 
             # Kommentare und Leerzeilen überspringen, sortieren, zählen
-            mapfile -t lines < <(grep -Ev '^\s*#|^\s*$' "$files_conf" | sort -k2,2 -k1,1)
+            lines="$(grep -Ev '^\s*#|^\s*$' "$files_conf" | sort -k2,2 -k1,1)"
 
-            local last_target=""
-            local filecount=0
+            last_target=""
+            filecount=0
 
-            for line in "${lines[@]}"; do
+            while IFS= read -r line; do
                 src="${line%%-->*}"
                 src="$(trim "$src")"
                 target="${line#*-->}"
                 target="$(trim "$target")"
 
                 # Verzeichnisanteil extrahieren:
-                if [[ "$target" == */ ]]; then
-                    # endet auf / -> ist ein Verzeichnis
-                    target="${target%/}"
-                elif [[ "$target" == *"/"* ]]; then
-                    # enthält / -> alles vor letztem /
-                    src="${target##*/}"
-                    target="${target%/*}"
-                else
-                    # kein / -> aktuelles Verzeichnis
-                    target="."
-                fi
+                case "$target" in
+                    */)
+                        # endet auf / -> ist ein Verzeichnis
+                        target="${target%/}" ;;
+                    */*)
+                        # enthält / -> alles vor letztem /
+                        src="${target##*/}"
+                        target="${target%/*}" ;;
+                    *)
+                        # kein / -> aktuelles Verzeichnis
+                        target="." ;;
+                esac
 
-                if [[ "$target" != "$last_target" ]]; then
+                if [ "$target" != "$last_target" ]; then
                     cdepShowMsg "    $target/"
                     last_target=$target
                 fi
                 cdepShowMsg "        $src"
                 filecount=$((filecount + 1))
-            done
-
+            done <<EOF
+$lines
+EOF
             total=$(( total + filecount ))
             cdepShowMsg ""
         fi
@@ -2629,12 +2724,10 @@ makePackageInfo() {
 ## Erstellt die Paketinformationen zur Anzeige im Terminal und/oder Ausgabe in Datei
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makePackageList() {
-    local output
-
     output="$(
-    local local_manifests;   local_manifests="$(getCdeployDir local)/manifests"
-    local global_manifests;  global_manifests="$(getCdeployDir global)/manifests"
-    local counter=0
+    local_manifests="$(getCdeployDir local)/manifests"
+    global_manifests="$(getCdeployDir global)/manifests"
+    counter=0
 
     # Titel und Beschreibung der Aktion ausgeben
     showTitle
@@ -2688,9 +2781,9 @@ makePackageList() {
 ## ~/.local/bin sein.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makeSymlinks() {
-    local src_dir="$1"
-    local dest_dir="$2"
-    local dest_file
+    src_dir="$1"
+    dest_dir="$2"
+    dest_file=""
 
     if [ -d "$src_dir" ]; then
         cdepSafeRun mkdir -p "$dest_dir"
@@ -2713,23 +2806,25 @@ manifestAppend() {
 
 
     # Wenn nötig, Header für Manifest-Datei schreiben
-    if [[ -z "$P_MANIFEST_FILE"  ]]; then manifestInit; fi
+    if [ -z "$P_MANIFEST_FILE"  ]; then manifestInit; fi
 
     # übergebene Dateiinformationen lesen und prüfen
-    local filepath="$1"
-    local category="$2"
+    filepath="$1"
+    category="$2"
 
     if [ ! -f "$filepath" ]; then return 0; fi
 
     # SHA256 Hash ermitteln
-    local hash;  hash="$(getFileHash "$filepath")"
+    hash="$(getFileHash "$filepath")"
 
     # Projektname und -version
-    local pname;    pname="$CDEP_PACKAGE_NAME"
-    local pversion; pversion="$(versionNormalized "$CDEP_PACKAGE_VERSION")"
+    pname="$CDEP_PACKAGE_NAME"
+    pversion="$(versionNormalized "$CDEP_PACKAGE_VERSION")"
 
     # Dateigröße und mtime ermitteln
-    local size mtime
+    size=0
+    mtime=""
+
     if stat --version >/dev/null 2>&1; then
         # GNU stat (Linux)
         size=$(stat -c%s "$filepath")
@@ -2756,12 +2851,10 @@ manifestInit() {
     cdepSafeRun mkdir -p "$P_TARGET_MANIFEST"
 
     P_MANIFEST_FILE="${P_TARGET_MANIFEST}/$(cdepGetPackageInfo -).manifest"
-    if [ -f "$P_MANIFEST_FILE" ]; then
-        cdepSafeRun rm "$P_MANIFEST_FILE"
-    fi
+    removeFile "$P_MANIFEST_FILE"
 
     # Header schreiben
-    local install_date;  install_date=$(date -Iseconds)
+    install_date=$(date -Iseconds)
 
     fileAppend "$P_MANIFEST_FILE" \
         "###" \
@@ -2780,17 +2873,43 @@ manifestInit() {
 ## Skript beenden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 quit() {
-    local return_code="$1"
+    # Zuerst alle Traps entfernen, um Rekursionen zu vermeiden
+    trap - EXIT INT TERM HUP
+
+    # Sicherstellen, dass die Ausgabe (wieder) aktiv ist
+    stty echo
+
+    # Offenen Eintrag in ~/.profile abschließen
+    if isFalse "$P_OPT_DRYRUN" && isTrue "$P_ENV_PATH_SET"; then
+        echo "# <<< cdeploy initialize <<<" >> "$HOME/.profile"
+    fi
+
+    # Temporäre Dateien/Verzeichnisse entfernen
+    printf '%s\n' "$P_TMP_OBJECTS" | while IFS= read -r p; do
+        [ -e "$p" ] && cdepSafeRun rm -rf -- "$p"
+    done
+
+    # Verwendung von sudo deaktivieren
+    if [ "$P_USE_SUDO" != "" ]; then
+        P_USE_SUDO=""
+        sudo -k
+    fi
+
+
+    ##
+    ## Abschließende Ausgabe
+    ##
+
 
     # Zusammenfassung zu Fehlern und Warnungen ausgeben
-    if isTrue $P_SHOW_SYNOPSIS; then
-        local warn_str
-        [[ $P_COUNT_WRN -eq 1 ]] && warn_str="Warnung" || warn_str="Warnungen"
+    if isTrue "$P_SHOW_SYNOPSIS"; then
+        warn_str=""
+        [ "$P_COUNT_WRN" -eq 1 ] && warn_str="Warnung" || warn_str="Warnungen"
         cdepShowMsg "" "${P_COUNT_WRN} ${warn_str}, ${P_COUNT_ERR} Fehler"
     fi
 
     # Ggf. Hinweis auf Testlauf ausgeben
-    if [ "$return_code" -lt 255 ] && isTrue "$P_OPT_DRYRUN"; then
+    if isTrue "$P_OPT_DRYRUN"; then
         cdepShowMsg "" \
                 "" \
                 "     !!! ================================================================== !!!" \
@@ -2802,11 +2921,8 @@ quit() {
                 ""
     fi
 
-    # Darstellung beenden
+    # UI beenden
     showBottomLine
-
-    # Skript mit übergebenen Returncode abschließen
-    exit "$return_code"
 }
 
 
@@ -2814,8 +2930,8 @@ quit() {
 ## Leer- und Kommentarzeilen werden ignoriert.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 readManifestFile() {
-    local ws;  ws="$(printf ' \t')"
-    local tmp
+    ws="$(printf ' \t')"
+    tmp=""
 
     while IFS= read -r line || [ -n "$line" ]; do
         # Zeile am Anfang trimmen (Leerzeichen und Tabs entfernen), um Kommentarzeilen
@@ -2832,20 +2948,18 @@ readManifestFile() {
 ## Entfernt das übergeordnete Verzeichnis
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 removeDir() {
-    local status=0
-    local directory="$1"
+    status=0
+    directory="$1"
     shift
 
     if [ -d "$directory" ]; then
         # Versuchen das Verzeichnis zu entfernen. Evtl. Fehlermeldungen werden unterdrückt,
         # die sind in diesem Fall uninteressant.
-        local output=""
+        output=""
 
         if isFalse "$P_OPT_DRYRUN"; then
-            set +e
             $P_USE_SUDO rmdir "$directory" 2> /dev/null #|| true
             status=$?
-            set -e
         fi
 
         if [ "$status" -eq 0 ] && [ $# -gt 0 ]; then
@@ -2857,6 +2971,26 @@ removeDir() {
 }
 
 
+## Entfernt eine Datei, wenn sie existiert
+## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+removeFile() {
+    file="$1"
+    msg="${2-}"
+
+    if [ -f "$file" ] || [ -L "$file" ]; then
+        if [ -z "$msg" ]; then
+            cdepSafeRun rm -f "$file"
+            return $?
+        else
+            cdepSafeRun rm -f "$file" "MSG:$msg"
+            return $?
+        fi
+    fi
+
+    return 1
+}
+
+
 ## Speichert die Remove-Hooks (Paket config-Datei) für ein späteres Entfernen des Pakets
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 saveRemoveHooks() {
@@ -2864,14 +2998,14 @@ saveRemoveHooks() {
     if ! usesRemoveHooks; then return 0; fi
 
 
-    local src_conf="$1"
-    local hook_dir; hook_dir="$(getCdeployDir "$P_OPT_SCOPE")/hooks"
+    src_conf="$1"
+    hook_dir="$(getCdeployDir "$P_OPT_SCOPE")/hooks"
     cdepSafeRun mkdir -p "$hook_dir" || \
             cdepShowError 1 "Verzeichnis für Paketinformationen konnte nicht erstellt werden."
 
     # Zieldatei z. B. "mypackage-1.0.hook"
-    local hook_file; hook_file="$(cdepGetPackageInfo "-").hook"
-    local hook_path="${hook_dir}/${hook_file}"
+    hook_file="$(cdepGetPackageInfo "-").hook"
+    hook_path="${hook_dir}/${hook_file}"
 
     # config-Datei (cdeploy.conf) kopieren und zip-en;
     # Datei ins Manifest aufnehmen
@@ -2891,11 +3025,11 @@ saveRemoveHooks() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showBottomLine() {
     if isTrue "${_BOTTOM_LINE_SHOWN:=0}"; then return; fi
-    declare -gr _BOTTOM_LINE_SHOWN=1
+    _BOTTOM_LINE_SHOWN=1;  readonly _BOTTOM_LINE_SHOWN
 
     # Ausgabe im Terminalfenster
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
-    local str
+    termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    str=""
 
     if [ "$termW" -lt 40 ]; then
         echo ""
@@ -2936,10 +3070,10 @@ showHookWarning() {
         "   Wenn Sie das Paket trotzdem verwenden möchten, tippen Sie \"ja\"." \
         "   Mit jeder anderen Eingabe brechen Sie den Vorgang ab."
 
-    echo -n "   > "; IFS= read -r choice
-    if [[ "$(toLowercase "$choice")" != "ja" ]]; then
+    printf "   > ";  IFS= read -r choice
+    if [ "$(toLowercase "$choice")" != "ja" ]; then
         cdepShowMsg "" "   (Vorgang vom Benutzer abgebrochen.)" ""
-        quit 2
+        exit 2
     fi
 
     cdepShowMsg "" "   (Das Paket wird verwendet.)" "" ""
@@ -2951,10 +3085,10 @@ showHookWarning() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 showTitle() {
     if isTrue "${_TITLE_SHOWN:=0}"; then return; fi
-    declare -gr _TITLE_SHOWN=1
+    _TITLE_SHOWN=1;  readonly _TITLE_SHOWN
 
-    local termW;  termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
-    local info=""
+    termW="$(getTerminalWidth)";  [ "$termW" -gt 80 ] && termW=80
+    info=""
     if [ "$termW" -ge 40 ]; then
         info="${_CDEP_SCRIPT_NAME} Version ${_CDEP_SCRIPT_VERSION}                                                                      ."
     fi
@@ -2968,7 +3102,7 @@ showTitle() {
                 "${_INVERT}${info}${_RESET}" \
                 ""
     else
-        local line;  line="$(left "====================================================================================" "$termW")"
+        line="$(left "====================================================================================" "$termW")"
         cdepShowMsg "" \
                 "$line" \
                 "${info}" \
@@ -2985,7 +3119,7 @@ showSyntaxAndExit() {
     showTitle
 
     # optionale Fehlermeldungen ausgeben
-    if [[ $# -gt 0 ]]; then
+    if [ $# -gt 0 ]; then
         cdepShowError 0 "$@"
         cdepShowMsg ""
     fi
@@ -2999,7 +3133,7 @@ showSyntaxAndExit() {
             "        cdeploy pack [--compressed] <archive>.cdp <package>" \
             "        cdeploy remove --global|--local [--use-hooks] [--force] <package>" \
             "        cdeploy version"
-    quit 255
+    exit 255
 
 
 }
@@ -3009,21 +3143,30 @@ showSyntaxAndExit() {
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 sudoLogin() {
     echo "   Für diese Aktion benötigen Sie Administratorrechte." > /dev/tty
-    if [[ ! -t 1 ]]; then
-        echo -n "   [sudo Kennwortabfrage]"
+    if [ ! -t 1 ]; then
+        printf "   [sudo Kennwortabfrage]"
     fi
 
     # Trap, damit bei Strg-C sauber aufgeräumt wird (Kennwort-Variable löschen) und das
     # Skript mit einem Fehlercode (1) zurückkommt.
-    local pw
-    trap '[[ ! -t 1 ]] && echo > /dev/tty; cdepShowMsg "" "" "   (Abbruch durch den Benutzer)" ""; pw=""; unset pw; trap - INT; quit 1' INT
+    pw=""
+    trap '[ ! -t 1 ] && echo > /dev/tty; cdepShowMsg "" "" "   (Abbruch durch den Benutzer)" ""; pw=""; unset pw; trap - INT; exit 1' INT
 
     while true; do
         # Passwort ohne Echo einlesen; bei Strg-C oder EOF liefert read !=0
-        if ! IFS= read -rsp "   Bitte geben Sie ihr Kennwort ein (Strg-C zum Abbrechen): " pw; then
+        pw=""
+        cdepShowMsg "   Bitte geben Sie ihr Kennwort ein (Strg-C zum Abbrechen). "
+        printf "   > "
+        stty -echo
+        IFS= read -r pw
+        rc=$?
+        stty echo
+        printf "••••••••"
+
+        if [ $rc -ne 0 ]; then
             if isTrue "$P_OPT_QUIET"; then echo > /dev/tty; fi
             cdepShowMsg "" "" "   (Abbruch durch den Benutzer)" ""
-            quit 1
+            exit 1
         fi
 
         # Passwort an sudo übergeben; Ausgaben unterdrücken
@@ -3051,34 +3194,18 @@ sudoLogin() {
 }
 
 
-## Ändert das erste Zeichen im übergeben String in einen Großbuchstaben
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-toCapitalized() {
-    local text="$1"
-    echo "${text^}"
-}
-
-
 ## Ändert alle Zeichen im übergebenen Strnig in Kleinbuchstaben
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 toLowercase() {
-    local text="$1"
-    echo "${text,,}"
-}
-
-
-## Ändert alle Zeichen im übergebenen String in Großbuchstaben
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-toUppercase() {
-    local text="$1"
-    echo "${text^^}"
+    text="$1"
+    printf '%s' "$text" | tr '[:upper:]' '[:lower:]'
 }
 
 
 ## Entfernt alle Leerzeichen am Anfang und Ende eines Strings
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 trim() {
-    local str="$1"
+    str="$1"
     str="${str#"${str%%[![:space:]]*}"}"    # links trimmen
     str="${str%"${str##*[![:space:]]}"}"    # rechts trimmen
     printf '%s' "$str"
@@ -3116,8 +3243,8 @@ usesHooks() {
 ## Prüft ob Install-Hooks verwendet werden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usesInstallHooks() {
-    isOverridden hookPreInstall && return 0
-    isOverridden hookPostInstall && return 0
+    hookExists hookPreInstall && return 0
+    hookExists hookPostInstall && return 0
     return 1
 }
 
@@ -3125,8 +3252,8 @@ usesInstallHooks() {
 ## Prüft ob Remove-Hooks verwendet werden
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 usesRemoveHooks() {
-    isOverridden hookPreRemove && return 0
-    isOverridden hookPostRemove && return 0
+    hookExists hookPreRemove && return 0
+    hookExists hookPostRemove && return 0
     return 1
 }
 
@@ -3134,39 +3261,15 @@ usesRemoveHooks() {
 ## Plausibilitätsprüfung für (Pfad-)Variablen (leer oder ungültige Zeichen)
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 validateVar() {
-    local varname="$1"
-    local value="${!varname}"
-    if [[ -z "$value" ]]; then
+    varname="$1"
+    value="$2"
+    if [ -z "$value" ]; then
         cdepShowError 1 "Variable $varname ist leer."
     fi
-    if [[ "$value" =~ [^a-zA-Z0-9._/-] ]]; then
-        cdepShowError 1 "Variable $varname enthält ungültige Zeichen." "$value"
-    fi
-}
-
-
-## Liefert eine lesbare Form der übergebenen normalisierten Versionsnummer
-## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-versionReadable() {
-    ver="$1"
-
-    # Major = erstes Paar, Minor = zweites Paar, Patch = drittes Paar
-    major=${ver%????}           # entfernt die letzten 4 Stellen -> Major+2 Stellen vom Ende
-    rest=${ver#"${major}"}      # restliche 4 Stellen
-    minor=${rest%??}            # die ersten 2 davon = Minor
-    patch=${rest#"${minor}"}    # die letzten 2 = Patch
-
-    # führende Nullen entfernen
-    major=$(echo "$major" | sed 's/^0*//')
-    minor=$(echo "$minor" | sed 's/^0*//')
-    patch=$(echo "$patch" | sed 's/^0*//')
-
-    # Wenn leer -> 0
-    major=${major:-0}
-    minor=${minor:-0}
-    patch=${patch:-0}
-
-    printf "%d.%d.%d\n" "$major" "$minor" "$patch"
+    case "$value" in
+        [!a-zA-Z0-9._/-])
+            cdepShowError 1 "Variable $varname enthält ungültige Zeichen." "$value" ;;
+    esac
 }
 
 
@@ -3186,19 +3289,6 @@ versionNormalized() {
 
     printf "%02d%02d%02d" "$major" "$minor" "$patch"
 }
-
-
-
-
-## ========================================================================================
-## Hooks definieren (leere Standard-Implementierungen)
-## Hooks können in der Datei 'cdeploy.conf' im Installationspaket überschrieben werden und
-## erweitern die Funktionalität von cdeploy.
-## ========================================================================================
-hookPreInstall()   { : __DEFAULT_HOOK__; }
-hookPostInstall()  { : __DEFAULT_HOOK__; }
-hookPreRemove()    { : __DEFAULT_HOOK__; }
-hookPostRemove()   { : __DEFAULT_HOOK__; }
 
 
 
