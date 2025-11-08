@@ -2870,11 +2870,17 @@ manifestInit() {
 }
 
 
-## Skript beenden
+## Skript beenden: Aufräumen und ggf. abschließende Ausgaben machen
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# shellcheck disable=SC2317
 quit() {
-    # Zuerst alle Traps entfernen, um Rekursionen zu vermeiden
+    # Sicherstellen dass die Methode nur einmal ausgeführt wird
+    [ "${_CDEP_CLEANUP_DONE-0}" -eq 1 ] && return 0
+    _CDEP_CLEANUP_DONE=1;  readonly _CDEP_CLEANUP_DONE
+
+    # Zusätzlich auch alle Traps entfernen, um Rekursionen zu vermeiden
     trap - EXIT INT TERM HUP
+
 
     # Sicherstellen, dass die Ausgabe (wieder) aktiv ist
     stty echo
@@ -2885,15 +2891,15 @@ quit() {
     fi
 
     # Temporäre Dateien/Verzeichnisse entfernen
-    printf '%s\n' "$P_TMP_OBJECTS" | while IFS= read -r p; do
+    while IFS= read -r p; do
         [ -e "$p" ] && cdepSafeRun rm -rf -- "$p"
-    done
+    done <<EOF
+$P_TMP_OBJECTS
+EOF
 
     # Verwendung von sudo deaktivieren
-    if [ "$P_USE_SUDO" != "" ]; then
-        P_USE_SUDO=""
-        sudo -k
-    fi
+    P_USE_SUDO=""
+    sudo -k
 
 
     ##
