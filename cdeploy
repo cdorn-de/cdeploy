@@ -152,7 +152,8 @@ P_TARGET_HOOKS=""
 P_TARGET_LIB=""
 P_TARGET_MAN=""
 P_TARGET_MANIFEST=""
-P_TARGET_SYM=""
+P_TARGET_SYMBIN=""
+P_TARGET_SYMMAN=""
 P_USE_PAGER=0
 P_USE_SUDO=""
 
@@ -644,7 +645,7 @@ commandInstall() {
         # ~/.local/bin bzw. /usr/local/bin an – abhängig vom P_OPT_SCOPE.
         # Diese beiden Pfade sind normalerweise immer in PATH enthalten.
         cdepShowMsg "  => Erstelle Symlinks..."
-        makeSymlinks "$P_TARGET_BIN" "$P_TARGET_SYM"
+        makeSymlinks "$P_TARGET_BIN" "$P_TARGET_SYMBIN"
         cdepShowMsg ""
     fi
 
@@ -967,7 +968,13 @@ EOF
         #elif rm -f "$m_filepath"; then
         elif removeFile "$m_filepath"; then
             cdepShowMsg "  X  ${type} $m_filepath"
-            removeDir "$(dirname "$m_filepath")" || true
+            rm_dir="$(dirname "$m_filepath")"
+            removeDir "$rm_dir" || true
+            # Man-Pages sind tiefer verschachtelt. Daher müssen wir noch versuchen,
+            # das übergeordnete man-Verzeichnis zu entfernen.
+            if [ "$m_cat" = "man" ]; then
+                removeDir "$(dirname "$rm_dir")" || true
+            fi
         else
             err_rm=$((err_rm + 1))
         fi
@@ -2274,13 +2281,13 @@ getInstallerTargets() {
     case "$P_OPT_SCOPE" in
         global)
             P_BASE_TARGET="${CDEP_BASE_GLOBAL}/${CDEP_PACKAGE_NAME}"
-            P_TARGET_MAN="/usr/share/man"
-            P_TARGET_SYM="/usr/local/bin"
+            P_TARGET_SYMBIN="/usr/local/bin"
+            P_TARGET_SYMMAN="/usr/share/man"
             ;;
         local)
             P_BASE_TARGET="${CDEP_BASE_LOCAL}/${CDEP_PACKAGE_NAME}"
-            P_TARGET_MAN="$HOME/.local/share/man"
-            P_TARGET_SYM="$HOME/.local/bin"
+            P_TARGET_SYMBIN="$HOME/.local/bin"
+            P_TARGET_SYMMAN="$HOME/.local/share/man"
             ;;
         *)
             cdepShowError 1 "Unbekannter Zielbereich, oder Zielbereich nicht definiert: '$P_OPT_SCOPE'"
@@ -2290,6 +2297,7 @@ getInstallerTargets() {
     P_TARGET_BIN="${P_BASE_TARGET}/bin"
     P_TARGET_LIB="${P_BASE_TARGET}/lib"
     P_TARGET_ETC="${P_BASE_TARGET}/etc"
+    P_TARGET_MAN="${P_BASE_TARGET}/man"
     P_TARGET_MANIFEST="$(getCdeployDir $P_OPT_SCOPE)/manifests"
     P_TARGET_HOOKS="$(getCdeployDir $P_OPT_SCOPE)/hooks"
 
@@ -2300,7 +2308,8 @@ getInstallerTargets() {
     validateVar "P_TARGET_LIB" "$P_TARGET_LIB"
     validateVar "P_TARGET_MAN" "$P_TARGET_MAN"
     validateVar "P_TARGET_MANIFEST" "$P_TARGET_MANIFEST"
-    validateVar "P_TARGET_SYM" "$P_TARGET_SYM"
+    validateVar "P_TARGET_SYMBIN" "$P_TARGET_SYMBIN"
+    validateVar "P_TARGET_SYMMAN" "$P_TARGET_SYMMAN"
 }
 
 
@@ -2451,6 +2460,16 @@ installManpages() {
                     manifestAppend "$target_dir/$(basename "$manfile"*)" "man"
                 fi
             fi
+        done
+
+        # Anstatt die MANPATH-Variable anzupassen legen wir Symlinks in
+        # ~/.local/share/man bzw. /usr/share/man an – abhängig vom P_OPT_SCOPE.
+        # Diese beiden Pfade sind normalerweise immer in MANPATH enthalten.
+        cdepShowMsg "  => Erstelle Symlinks..."
+        dest_dir="$P_TARGET_MAN"
+        for mandir in "$dest_dir"/man[1-9]; do
+            mandir="$(basename "$mandir")"
+            makeSymlinks "$dest_dir/$mandir" "$P_TARGET_SYMMAN/$mandir"
         done
 
         # Man-Datenbank aktualisieren
@@ -2781,18 +2800,18 @@ makePackageList() {
 ## ~/.local/bin sein.
 ## ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 makeSymlinks() {
-    src_dir="$1"
-    dest_dir="$2"
-    dest_file=""
+    ms_src_dir="$1"
+    ms_dest_dir="$2"
+    ms_dest_file=""
 
-    if [ -d "$src_dir" ]; then
-        cdepSafeRun mkdir -p "$dest_dir"
-        for f in "$src_dir"/*; do
+    if [ -d "$ms_src_dir" ]; then
+        cdepSafeRun mkdir -p "$ms_dest_dir"
+        for f in "$ms_src_dir"/*; do
             [ -f "$f" ] || continue
-            dest_file="$dest_dir/$(basename "$f")"
-            cdepSafeRun ln -sf "$f" "$dest_file" \
-                 "MSG:     -> $dest_file -> $f"
-            manifestAppend "$dest_file" "link"
+            ms_dest_file="$ms_dest_dir/$(basename "$f")"
+            cdepSafeRun ln -sf "$f" "$ms_dest_file" \
+                 "MSG:     -> $ms_dest_file"
+            manifestAppend "$ms_dest_file" "link"
         done
     fi
 }
