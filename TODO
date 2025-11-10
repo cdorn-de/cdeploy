@@ -4,9 +4,9 @@ Allgemein
 
 
 
-Version 1.1
+Version 0.8
 ===============
-[ ] Installation von Man-Pages an die von Programmen/Skripten angleiche
+[X] Installation von Man-Pages an die von Programmen/Skripten angleichen
 [ ] Schutz von bestehenden Installationen bei Install
     [ ] Sicherheitsabfrage vor dem Überschreiben
     [ ] Option --yes zum Umgehen der Sicherheitsabfrage
@@ -15,4 +15,3 @@ Version 1.1
     [ ] Standardbreite: 80 Zeichen
 [ ] Remove: Mehrfach verwendete Dateien müssen über ALLE Manifeste gesucht werden,
             nicht nur innerhalb eines Pakets! Grund: Bibliotheken in .lib/
-[ ] Parameter für Kennwort zum sudo-Login
