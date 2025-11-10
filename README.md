@@ -1,16 +1,16 @@
 ![](pics/cdeploy_icon_256.png)
 
-# *cdeploy* – Ein leichtgewichtiges Installationssystem für Bash-kompatible Systeme
+# *cdeploy* – Ein leichtgewichtiges Installationssystem für POSIX-kompatible Systeme
 
 **Summary**  
-*cdeploy* is a fully shell-based, Bash-compatible installation system that can install, update, and remove software packages. It relies solely on standard Unix commands and requires no external dependencies. The system is transparent, predictable, and portable — ideal for minimalist environments, custom projects, or systems without a package manager.
+*cdeploy* is a fully shell-based, POSIX-compatible installation system that can install, update, and remove software packages. It relies solely on standard Unix commands and requires no external dependencies. The system is transparent, predictable, and portable — ideal for minimalist environments, custom projects, or systems without a package manager.
 
 For now, this software is available in German only.
    
    
 
 **Zusammenfassung**  
-*cdeploy* ist ein vollständig in Shell realisiertes, Bash-kompatibles Installationssystem,
+*cdeploy* ist ein vollständig in Shell realisiertes, POSIX-kompatibles Installationssystem,
 das Softwarepakete installieren, aktualisieren und entfernen kann. Es verwendet ausschließlich Standard-Unix-Befehle und benötigt keine externen Abhängigkeiten. Das System ist transparent, nachvollziehbar und portabel – ideal für minimalistische Umgebungen, eigene Projekte oder Systeme ohne Paketmanager.
 
 
@@ -22,7 +22,7 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 - **Einfache Nutzung:** einfache Verzeichnisse oder Archivdateien als Installationspakete
 - **Portabilität** auf möglichst alle Unix-artigen Betriebssysteme
-- **POSIX-Kompatibilität** als Ziel für Version 1.1 (bis dahin Bash-kompatibel)
+- **POSIX-Kompatibilität**
 - **Keine externen Abhängigkeiten,** es werden nur Standard-Unix-Tools verwendet
 - **Sauberes Fehlermanagement** mit klaren Meldungen über eine zentrale Fehlerroutine
 - **Volle Nachvollziehbarkeit** der Installationen durch Manifeste mit Hashwerten
@@ -38,7 +38,7 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 ## Architekturüberblick
 
-- Vollständig in Shell geschrieben. Aktuell Bash-kompatibel, für die nächste Version ist vollständige POSIX-Kompatibilität angestrebt.
+- Vollständig in Shell geschrieben. POSIX-Kompatibel.
 - Zentrale Methoden zur Ausgabe von Informationen, Warn- und Fehlermeldungen: `cdepShowMsg`, `cdepShowWarning` und `cdepShowError`.
 - Zentrale Methode zum Ausführen von Dateioperationen: `cdepSafeRun`.
 - Automatisches herunterladen von Paketen, wenn diese als URL angegeben werden (`http`, `https`, `ftp`, `file`).
@@ -55,89 +55,18 @@ Die Idee hinter *cdeploy* ist ein einfach zu bedienendes Hilfswerkzeug für Admi
 
 Eine typische Paketstruktur sieht folgendermaßen aus:
 
-<table class="tree">
-    <tr>
-        <td class="content" colspan="5">[Paketname]</td>
-    </tr>
+    [Paketname]
+        |– cdeploy.conf
+        |– bin/
+        |– etc/
+        |– files/
+        |    |– files.conf
+        |– lib
+        |– man
 
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">cdeploy.conf</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
+Die Verzeichnisse `bin`, `etc`, `lib` und `man` werden in ein Paket-Verzeichnis kopiert, das für jedes Paket angelegt wird. Damit die Umgebungsvariablen `PATH` und `MANPATH` nicht für jede Installation angepasst werden müssen, werden Symlinks auf die Dateien in `bin` und `man` in den entsprechenden lokalen bzw. globalen Standardpfaden anglegt.
 
-    <tr style="border: 0;">
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">bin&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr style="border: 0;">
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">etc&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">files&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td></td>
-        <td class="tree_v" style="width: 1em;"></td>
-        <td class="tree_h"  ></td>
-        <td class="content" rowspan="2">files.conf</td>
-        </tr>
-        <tr>
-        <td class="tree_v" style="width: 1em;"></td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">lib&thinsp;/</td>
-        </tr>
-        <tr>
-        <td class="tree_v"></td>
-        <td></td>
-    </tr>
-
-    <tr>
-        <td class="tree_v"></td>
-        <td class="tree_h"></td>
-        <td class="content" colspan="3" rowspan="2">man&thinsp;/</td>
-        </tr>
-        <tr>
-        <td ></td>
-        <td></td>
-    </tr>
-</table>
-
-Die Verzeichnisse `bin`, `etc` und `lib` werden in ein Paket-Verzeichnis kopiert, das speziell für dieses Paket angelegt wird. `man` wird abhängig von der Installation in das lokale bzw. globale `man`-Verzeichnis kopiert.
-
-Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Paket-Verzeichnisses liegen müssen. Ihr Zielverzeichnis wird in der Datei `files.conf` definiert. Dazu wird pro Datei im Verzeichnis `files` eine Zeile angelegt, die zuerst den Dateinamen, dann ein Tab-Zeichen und dann den Zielpfad (relativ oder absolut) enthält. Wenn die Zielverzeichnisse nicht existieren, werden sie bei der Installation angelegt. Die Datei `files.conf` darf Leer- und Kommentarzeilen (beginnen mit einem `#`) enthalten.
+Das Verzeichnis `files` ist für Dateien gedacht, die an Orten außerhalb des Paket-Verzeichnisses liegen müssen. Ihr Ziel wird in der Datei `files.conf` definiert. Dazu wird pro Datei im Verzeichnis `files` eine Zeile angelegt, die zuerst den Dateinamen, dann die Zeichenfolge `-->` und dann den Zielpfad (relativ oder absolut) enthält. Wenn die Zielverzeichnisse nicht existieren, werden sie bei der Installation angelegt. Die Datei `files.conf` darf Leer- und Kommentarzeilen (beginnen mit einem `#`) enthalten. Leerzeichen vor und hinter dem Dateinamen oder Zielpfad werden entfernt.
 
 ```bash
 # Syntax der Datei 'files.conf'
@@ -157,7 +86,7 @@ Hooks erweitern die Funktionalität eines Pakets durch eigene Aktionen z.B. vor 
 # Ein Beispiel für individuelle Hook-Parameter. Der Parameter '--hp-is-admin' wird ohne einen
 # definierten Wert übergeben und wird intern auf '1' gesetzt.
 
-cdeploy install -hp-user='demo' -hp-password="Das Passwort ist 'secret'!" --hp-is-admin ..
+cdeploy install -l --hp-user='demo' --hp-password="Das Passwort ist 'secret'!" --hp-is-admin demo.cdp
 ```
 
 Hooks können die Werte von Hook-Parametern mit der Funktion `cdepGetHookParameter` abrufen. Die Methode erwartet als ersten Parameter den Schlüssel (ohne das vorangestellte `--hp-`). Im optionalen zweiten Methoden-Parameter kann ein Standardwert übergeben werden, für den Fall dass der Hook-Parameter nicht übergeben wurde. Wenn kein Standardwert übergeben wird, liefert die Methode stattdessen einen leeren String.
@@ -257,7 +186,7 @@ Die Methoden der Hook-API beginnen immer mit dem Präfix `cdep` und verwenden di
 
 ## Man-Page
 
-Die Hilfeseite wird direkt aus dem Skript heruas als Man-Page zur Verfügung gestellt. Das ist Teil der Strategie zur vollständigen Selbständigkeit des Skripts, ein Installationsvorgang ist somit überflüssig.  Die Seite beschreibt alle Befehle, Optionen und die interne Struktur des Skripts.
+Die Hilfeseite wird direkt aus dem Skript heraus als Man-Page zur Verfügung gestellt. Das ist Teil der Strategie zur vollständigen Selbständigkeit des Skripts. Die Seite beschreibt alle Befehle, Optionen und die interne Struktur des Skripts.
 
 ```bash
 cdeploy help
@@ -286,12 +215,3 @@ DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTE
 ## Kontakt
 
 Projektseite: https://github.com/cdorn_de/cdeploy
-
-
-
-
-## Nächste Schritte
-
-- Das Skript soll vollständig POSIX-kompatibel werden
-- Angleichen der Installation von man-Pages an die der bin-Dateien
-- Testskripte für typische Szenarien (install, update, remove)
